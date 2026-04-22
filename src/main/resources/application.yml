@@ -23,3 +23,13 @@ mybatis-plus:
 logging:
   level:
     com.qs.ai.admian: info
+
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha

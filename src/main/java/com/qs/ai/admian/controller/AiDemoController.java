@@ -1,13 +1,17 @@
 package com.qs.ai.admian.controller;
 
+import com.qs.ai.admian.controller.request.AiChatRequest;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.util.response.AiKnowledgeData;
 import com.qs.ai.admian.util.response.AiResponseFactory;
 import com.qs.ai.admian.util.response.ApiResponse;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
@@ -21,6 +25,19 @@ import java.util.List;
 @RequestMapping("/api/ai")
 @Validated
 public class AiDemoController {
+
+    @PostMapping("/chat/validate")
+    public ApiResponse<?> chatWithValidation(@RequestBody @Valid AiChatRequest request) {
+        if ("api_fail".equalsIgnoreCase(request.getContent())) {
+            throw new AiApiException("AI model upstream call failed");
+        }
+        return AiResponseFactory.chatSuccess(
+                request.getUserId(),
+                "AI model [" + request.getModelType() + "] received: " + request.getContent(),
+                256,
+                List.of("doc://model-" + request.getModelType())
+        );
+    }
 
     @GetMapping("/chat")
     public ApiResponse<?> chat(@RequestParam(defaultValue = "default-conversation") String conversationId,
