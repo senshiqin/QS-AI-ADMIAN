@@ -5,6 +5,9 @@ target/
 *.war
 *.ear
 
+#sql
+*.sql
+
 # Keep Maven Wrapper binary
 !.mvn/wrapper/maven-wrapper.jar
 
