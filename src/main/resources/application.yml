@@ -1,4 +1,6 @@
-﻿spring:
+﻿debug: false
+
+spring:
   application:
     name: qs-ai-admian
   profiles:
@@ -26,3 +28,7 @@ springdoc:
 
 jwt:
   secret: ${JWT_SECRET:ReplaceWithAtLeast32BytesSecretKeyForJwtAuth123456}
+
+logging:
+  level:
+    org.springframework.boot.autoconfigure: INFO
