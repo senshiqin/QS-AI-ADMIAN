@@ -6,20 +6,19 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 /**
- * AI chat request parameters.
+ * Chat send request.
  */
 @Data
-public class AiChatRequest {
+public class ChatSendRequest {
 
-    @Schema(description = "对话内容", example = "你好，给我介绍一下RAG")
+    @Schema(description = "Conversation id, optional for first message", example = "conv-001")
+    private String conversationId;
+
+    @Schema(description = "User message content", example = "你好，介绍一下RAG")
     @NotBlank(message = "content must not be blank")
     private String content;
 
-    @Schema(description = "用户ID", example = "u1001")
-    @NotBlank(message = "userId must not be blank")
-    private String userId;
-
-    @Schema(description = "模型类型，仅支持deepseek或tongyi", example = "deepseek")
+    @Schema(description = "Model type", example = "deepseek")
     @NotBlank(message = "modelType must not be blank")
     @Pattern(regexp = "^(deepseek|tongyi)$", message = "modelType must be deepseek or tongyi")
     private String modelType;
