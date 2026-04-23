@@ -7,6 +7,20 @@ spring:
     url: jdbc:mysql://localhost:3306/qs_ai?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: root
     password: ${DB_PASSWORD}
+    hikari:
+      connection-test-query: SELECT 1
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      validation-timeout: 5000
+  sql:
+    init:
+      mode: never
+      schema-locations: classpath:schema.sql
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
 logging:
   level:
