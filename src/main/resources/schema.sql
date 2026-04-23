@@ -1,6 +1,78 @@
-CREATE TABLE IF NOT EXISTS ai_user (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    username VARCHAR(64) NOT NULL,
-    email VARCHAR(128) NOT NULL,
-    created_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+-- MySQL 8.4.8 AI backend core schema
+
+CREATE TABLE IF NOT EXISTS `sys_user` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
+  `user_no` VARCHAR(32) NOT NULL COMMENT 'Business unique user code',
+  `username` VARCHAR(64) NOT NULL COMMENT 'Login username',
+  `password_hash` VARCHAR(255) NOT NULL COMMENT 'Password hash',
+  `nickname` VARCHAR(64) DEFAULT NULL COMMENT 'Nickname',
+  `email` VARCHAR(128) DEFAULT NULL COMMENT 'Email',
+  `phone` VARCHAR(20) DEFAULT NULL COMMENT 'Phone',
+  `avatar_url` VARCHAR(255) DEFAULT NULL COMMENT 'Avatar URL',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '0 disabled, 1 enabled',
+  `last_login_time` DATETIME DEFAULT NULL COMMENT 'Last login time',
+  `remark` VARCHAR(255) DEFAULT NULL COMMENT 'Remark',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT 'Logical delete flag',
+  `create_by` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Created by user id',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  `update_by` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Updated by user id',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_sys_user_user_no` (`user_no`),
+  UNIQUE KEY `uk_sys_user_username` (`username`),
+  UNIQUE KEY `uk_sys_user_email` (`email`),
+  KEY `idx_sys_user_phone` (`phone`),
+  KEY `idx_sys_user_status_deleted` (`status`, `deleted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='System user';
+
+CREATE TABLE IF NOT EXISTS `ai_chat_record` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
+  `conversation_id` VARCHAR(64) NOT NULL COMMENT 'Conversation id',
+  `user_id` BIGINT UNSIGNED NOT NULL COMMENT 'User id',
+  `role_type` VARCHAR(16) NOT NULL COMMENT 'user/assistant/system/tool',
+  `content` MEDIUMTEXT NOT NULL COMMENT 'Message content',
+  `model_name` VARCHAR(64) DEFAULT NULL COMMENT 'Model name',
+  `prompt_tokens` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Prompt tokens',
+  `completion_tokens` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Completion tokens',
+  `total_tokens` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Total tokens',
+  `latency_ms` INT UNSIGNED DEFAULT NULL COMMENT 'Latency ms',
+  `request_id` VARCHAR(64) DEFAULT NULL COMMENT 'Upstream request id',
+  `knowledge_file_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Knowledge file id',
+  `error_code` VARCHAR(32) DEFAULT NULL COMMENT 'Error code',
+  `error_message` VARCHAR(500) DEFAULT NULL COMMENT 'Error message',
+  `ext_json` JSON DEFAULT NULL COMMENT 'Extension json',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT 'Logical delete flag',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  PRIMARY KEY (`id`),
+  KEY `idx_chat_conversation_time` (`conversation_id`, `create_time`),
+  KEY `idx_chat_user_time` (`user_id`, `create_time`),
+  KEY `idx_chat_model_time` (`model_name`, `create_time`),
+  KEY `idx_chat_request_id` (`request_id`),
+  KEY `idx_chat_deleted_time` (`deleted`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI chat record';
+
+CREATE TABLE IF NOT EXISTS `ai_knowledge_file` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
+  `kb_code` VARCHAR(64) NOT NULL COMMENT 'Knowledge base code',
+  `file_name` VARCHAR(255) NOT NULL COMMENT 'File name',
+  `file_type` VARCHAR(32) NOT NULL COMMENT 'File type',
+  `file_size` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'File size bytes',
+  `storage_path` VARCHAR(500) NOT NULL COMMENT 'Storage path',
+  `file_hash` VARCHAR(128) NOT NULL COMMENT 'File hash',
+  `parse_status` TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending,1 parsing,2 success,3 failed',
+  `chunk_count` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Chunk count',
+  `embedding_model` VARCHAR(64) DEFAULT NULL COMMENT 'Embedding model',
+  `vector_index_name` VARCHAR(128) DEFAULT NULL COMMENT 'Vector index name',
+  `last_parse_time` DATETIME DEFAULT NULL COMMENT 'Last parse time',
+  `uploader_user_id` BIGINT UNSIGNED NOT NULL COMMENT 'Uploader user id',
+  `remark` VARCHAR(255) DEFAULT NULL COMMENT 'Remark',
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT 'Logical delete flag',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+  `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_kf_kb_hash` (`kb_code`, `file_hash`),
+  KEY `idx_kf_kb_status` (`kb_code`, `parse_status`),
+  KEY `idx_kf_uploader_time` (`uploader_user_id`, `create_time`),
+  KEY `idx_kf_deleted_time` (`deleted`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI knowledge file';
