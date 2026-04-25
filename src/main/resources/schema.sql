@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS `ai_chat_record` (
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT 'Logical delete flag',
   `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
+  `version` INT NOT NULL DEFAULT 1 COMMENT 'Optimistic lock version',
   PRIMARY KEY (`id`),
   KEY `idx_chat_conversation_time` (`conversation_id`, `create_time`),
   KEY `idx_chat_user_chat_time` (`user_id`, `chat_time`),
@@ -105,6 +106,23 @@ SET @chat_time_idx_sql = (
 PREPARE stmt_chat_time_idx FROM @chat_time_idx_sql;
 EXECUTE stmt_chat_time_idx;
 DEALLOCATE PREPARE stmt_chat_time_idx;
+
+SET @chat_version_col_sql = (
+  SELECT IF(
+    EXISTS(
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'ai_chat_record'
+        AND COLUMN_NAME = 'version'
+    ),
+    'SELECT 1',
+    'ALTER TABLE `ai_chat_record` ADD COLUMN `version` INT NOT NULL DEFAULT 1 COMMENT ''Optimistic lock version'''
+  )
+);
+PREPARE stmt_chat_version_col FROM @chat_version_col_sql;
+EXECUTE stmt_chat_version_col;
+DEALLOCATE PREPARE stmt_chat_version_col;
 
 CREATE TABLE IF NOT EXISTS `ai_knowledge_file` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
