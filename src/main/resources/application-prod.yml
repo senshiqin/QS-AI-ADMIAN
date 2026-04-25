@@ -13,6 +13,19 @@ spring:
       maximum-pool-size: 30
       connection-timeout: 30000
       validation-timeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 32
+          max-idle: 16
+          min-idle: 4
+          max-wait: 3000ms
 
 logging:
   level:
