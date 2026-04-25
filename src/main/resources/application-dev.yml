@@ -15,7 +15,7 @@ spring:
       validation-timeout: 5000
   sql:
     init:
-      mode: never
+      mode: always
       schema-locations: classpath:schema.sql
 
 mybatis-plus:

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   `phone` VARCHAR(20) DEFAULT NULL COMMENT 'Phone',
   `avatar_url` VARCHAR(255) DEFAULT NULL COMMENT 'Avatar URL',
   `status` TINYINT NOT NULL DEFAULT 1 COMMENT '0 disabled, 1 enabled',
+  `user_points` INT NOT NULL DEFAULT 0 COMMENT 'User points',
   `last_login_time` DATETIME DEFAULT NULL COMMENT 'Last login time',
   `remark` VARCHAR(255) DEFAULT NULL COMMENT 'Remark',
   `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT 'Logical delete flag',
@@ -25,11 +26,29 @@ CREATE TABLE IF NOT EXISTS `sys_user` (
   KEY `idx_sys_user_status_deleted` (`status`, `deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='System user';
 
+SET @user_points_col_sql = (
+  SELECT IF(
+    EXISTS(
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'sys_user'
+        AND COLUMN_NAME = 'user_points'
+    ),
+    'SELECT 1',
+    'ALTER TABLE `sys_user` ADD COLUMN `user_points` INT NOT NULL DEFAULT 0 COMMENT ''User points'''
+  )
+);
+PREPARE stmt_user_points_col FROM @user_points_col_sql;
+EXECUTE stmt_user_points_col;
+DEALLOCATE PREPARE stmt_user_points_col;
+
 CREATE TABLE IF NOT EXISTS `ai_chat_record` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
   `conversation_id` VARCHAR(64) NOT NULL COMMENT 'Conversation id',
   `user_id` BIGINT UNSIGNED NOT NULL COMMENT 'User id',
   `role_type` VARCHAR(16) NOT NULL COMMENT 'user/assistant/system/tool',
+  `chat_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Chat time',
   `content` MEDIUMTEXT NOT NULL COMMENT 'Message content',
   `model_name` VARCHAR(64) DEFAULT NULL COMMENT 'Model name',
   `prompt_tokens` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Prompt tokens',
@@ -46,11 +65,46 @@ CREATE TABLE IF NOT EXISTS `ai_chat_record` (
   `update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
   PRIMARY KEY (`id`),
   KEY `idx_chat_conversation_time` (`conversation_id`, `create_time`),
-  KEY `idx_chat_user_time` (`user_id`, `create_time`),
+  KEY `idx_chat_user_chat_time` (`user_id`, `chat_time`),
   KEY `idx_chat_model_time` (`model_name`, `create_time`),
   KEY `idx_chat_request_id` (`request_id`),
   KEY `idx_chat_deleted_time` (`deleted`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI chat record';
+
+-- Keep startup initialization idempotent for existing databases (MySQL 8.4 compatible).
+SET @chat_time_col_sql = (
+  SELECT IF(
+    EXISTS(
+      SELECT 1
+      FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'ai_chat_record'
+        AND COLUMN_NAME = 'chat_time'
+    ),
+    'SELECT 1',
+    'ALTER TABLE `ai_chat_record` ADD COLUMN `chat_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT ''Chat time'''
+  )
+);
+PREPARE stmt_chat_time_col FROM @chat_time_col_sql;
+EXECUTE stmt_chat_time_col;
+DEALLOCATE PREPARE stmt_chat_time_col;
+
+SET @chat_time_idx_sql = (
+  SELECT IF(
+    EXISTS(
+      SELECT 1
+      FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'ai_chat_record'
+        AND INDEX_NAME = 'idx_chat_user_chat_time'
+    ),
+    'SELECT 1',
+    'CREATE INDEX `idx_chat_user_chat_time` ON `ai_chat_record` (`user_id`, `chat_time`)'
+  )
+);
+PREPARE stmt_chat_time_idx FROM @chat_time_idx_sql;
+EXECUTE stmt_chat_time_idx;
+DEALLOCATE PREPARE stmt_chat_time_idx;
 
 CREATE TABLE IF NOT EXISTS `ai_knowledge_file` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Primary key',
