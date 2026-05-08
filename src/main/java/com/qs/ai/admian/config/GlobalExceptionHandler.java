@@ -1,6 +1,7 @@
 package com.qs.ai.admian.config;
 
 import com.qs.ai.admian.exception.BusinessException;
+import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.util.response.ApiResponse;
 import com.qs.ai.admian.util.response.ResultCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -70,6 +71,13 @@ public class GlobalExceptionHandler {
         log.warn("Request parameter error, uri={}, method={}, message={}",
                 request.getRequestURI(), request.getMethod(), ex.getMessage());
         return ApiResponse.fail(ResultCode.BAD_REQUEST.getCode(), "Request parameter error: " + ex.getMessage());
+    }
+
+    @ExceptionHandler(AiApiException.class)
+    public ApiResponse<Void> handleAiApiException(AiApiException ex, HttpServletRequest request) {
+        log.error("AI API exception, uri={}, method={}, code={}, message={}",
+                request.getRequestURI(), request.getMethod(), ex.getCode(), ex.getMessage(), ex);
+        return ApiResponse.fail(ex.getCode(), ex.getMessage());
     }
 
     @ExceptionHandler(BusinessException.class)

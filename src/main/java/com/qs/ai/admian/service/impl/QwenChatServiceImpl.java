@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qs.ai.admian.config.DashScopeProperties;
 import com.qs.ai.admian.exception.AiApiException;
+import com.qs.ai.admian.service.AiApiService;
 import com.qs.ai.admian.service.QwenChatService;
 import com.qs.ai.admian.service.dto.AiChatMessage;
 import com.qs.ai.admian.service.dto.QwenChatResult;
@@ -16,7 +17,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
 import java.net.URI;
@@ -44,12 +44,11 @@ public class QwenChatServiceImpl implements QwenChatService {
     private final RestClient dashScopeRestClient;
     private final DashScopeProperties dashScopeProperties;
     private final ObjectMapper objectMapper;
+    private final AiApiService aiApiService;
 
     @Override
     public QwenChatResult chat(String model, List<AiChatMessage> messages, Double temperature) {
-        if (!StringUtils.hasText(dashScopeProperties.getApiKey())) {
-            throw new AiApiException("DashScope API key is not configured. Please set DASHSCOPE_API_KEY.");
-        }
+        aiApiService.validateApiKey(dashScopeProperties.getApiKey(), "DashScope");
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", StringUtils.hasText(model) ? model : DEFAULT_MODEL);
@@ -58,19 +57,21 @@ public class QwenChatServiceImpl implements QwenChatService {
         requestBody.put("stream", false);
 
         try {
-            ResponseEntity<String> responseEntity = dashScopeRestClient.post()
-                    .uri(dashScopeProperties.getChatPath())
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + dashScopeProperties.getApiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(requestBody)
-                    .retrieve()
-                    .toEntity(String.class);
+            ResponseEntity<String> responseEntity = aiApiService.executeWithRetry(
+                    "Qwen non-stream API request",
+                    () -> dashScopeRestClient.post()
+                            .uri(dashScopeProperties.getChatPath())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + dashScopeProperties.getApiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .accept(MediaType.APPLICATION_JSON)
+                            .body(requestBody)
+                            .retrieve()
+                            .toEntity(String.class)
+            );
 
             return parseResponse(responseEntity.getBody());
-        } catch (RestClientException ex) {
-            log.error("Qwen API request failed", ex);
-            throw new AiApiException("Qwen API request failed: " + ex.getMessage());
+        } catch (Exception ex) {
+            throw aiApiService.toAiApiException("Qwen non-stream API request", ex);
         }
     }
 
@@ -79,9 +80,7 @@ public class QwenChatServiceImpl implements QwenChatService {
                                      List<AiChatMessage> messages,
                                      Double temperature,
                                      QwenStreamHandler streamHandler) {
-        if (!StringUtils.hasText(dashScopeProperties.getApiKey())) {
-            throw new AiApiException("DashScope API key is not configured. Please set DASHSCOPE_API_KEY.");
-        }
+        aiApiService.validateApiKey(dashScopeProperties.getApiKey(), "DashScope");
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", StringUtils.hasText(model) ? model : DEFAULT_MODEL);
@@ -105,7 +104,10 @@ public class QwenChatServiceImpl implements QwenChatService {
                     .connectTimeout(Duration.ofMillis(dashScopeProperties.getConnectTimeoutMs()))
                     .build();
 
-            HttpResponse<Stream<String>> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines());
+            HttpResponse<Stream<String>> response = aiApiService.executeWithRetry(
+                    "Qwen stream API request",
+                    () -> httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines())
+            );
             try (Stream<String> lines = response.body()) {
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     String errorBody = lines.collect(Collectors.joining("\n"));
@@ -113,17 +115,11 @@ public class QwenChatServiceImpl implements QwenChatService {
                 }
                 return parseStreamLines(lines, streamHandler);
             }
-        } catch (AiApiException ex) {
-            throw ex;
-        } catch (IOException ex) {
-            log.warn("Qwen stream interrupted, possible client disconnect", ex);
-            throw new AiApiException("Qwen stream interrupted: " + ex.getMessage());
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new AiApiException("Qwen stream request interrupted");
+            throw aiApiService.toAiApiException("Qwen stream API request", ex);
         } catch (Exception ex) {
-            log.error("Qwen stream API request failed", ex);
-            throw new AiApiException("Qwen stream API request failed: " + ex.getMessage());
+            throw aiApiService.toAiApiException("Qwen stream API request", ex);
         }
     }
 
