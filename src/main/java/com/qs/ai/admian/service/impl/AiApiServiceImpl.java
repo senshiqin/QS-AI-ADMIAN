@@ -3,6 +3,7 @@ package com.qs.ai.admian.service.impl;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.service.AiApiService;
 import com.qs.ai.admian.service.dto.AiApiCall;
+import com.qs.ai.admian.service.dto.AiChatMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClientResponseException;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -51,6 +53,61 @@ public class AiApiServiceImpl implements AiApiService {
     public <T> T executeWithRetry(String operation, AiApiCall<T> apiCall) throws Exception {
         log.debug("Executing AI API call, operation={}", operation);
         return apiCall.execute();
+    }
+
+    @Override
+    public int estimateTokens(String text) {
+        if (!StringUtils.hasText(text)) {
+            return 0;
+        }
+
+        int tokens = 0;
+        int asciiRunLength = 0;
+        for (int i = 0; i < text.length(); ) {
+            int codePoint = text.codePointAt(i);
+            if (Character.isWhitespace(codePoint)) {
+                tokens += estimateAsciiRunTokens(asciiRunLength);
+                asciiRunLength = 0;
+            } else if (isCjk(codePoint)) {
+                tokens += estimateAsciiRunTokens(asciiRunLength);
+                asciiRunLength = 0;
+                tokens += 1;
+            } else {
+                asciiRunLength += Character.charCount(codePoint);
+            }
+            i += Character.charCount(codePoint);
+        }
+        tokens += estimateAsciiRunTokens(asciiRunLength);
+        return tokens;
+    }
+
+    @Override
+    public int estimateMessagesTokens(List<AiChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return 0;
+        }
+        int tokens = 0;
+        for (AiChatMessage message : messages) {
+            if (message == null) {
+                continue;
+            }
+            tokens += 4;
+            tokens += estimateTokens(message.getRole());
+            tokens += estimateTokens(message.getContent());
+        }
+        return tokens;
+    }
+
+    @Override
+    public void validateInputTokens(List<AiChatMessage> messages, Integer maxInputTokens) {
+        if (maxInputTokens == null || maxInputTokens <= 0) {
+            return;
+        }
+        int estimatedTokens = estimateMessagesTokens(messages);
+        if (estimatedTokens > maxInputTokens) {
+            throw new AiApiException("AI input tokens exceed limit, estimated=" + estimatedTokens
+                    + ", limit=" + maxInputTokens);
+        }
     }
 
     @Override
@@ -114,5 +171,20 @@ public class AiApiServiceImpl implements AiApiService {
             current = current.getCause();
         }
         return false;
+    }
+
+    private int estimateAsciiRunTokens(int length) {
+        if (length <= 0) {
+            return 0;
+        }
+        return Math.max(1, (length + 3) / 4);
+    }
+
+    private boolean isCjk(int codePoint) {
+        Character.UnicodeScript script = Character.UnicodeScript.of(codePoint);
+        return script == Character.UnicodeScript.HAN
+                || script == Character.UnicodeScript.HIRAGANA
+                || script == Character.UnicodeScript.KATAKANA
+                || script == Character.UnicodeScript.HANGUL;
     }
 }

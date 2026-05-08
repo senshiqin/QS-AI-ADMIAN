@@ -6,10 +6,12 @@ import com.qs.ai.admian.entity.AiChatRecord;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiChatRecordService;
 import com.qs.ai.admian.service.ChatContextService;
-import com.qs.ai.admian.service.QwenChatService;
+import com.qs.ai.admian.service.dto.AiApiChatResult;
+import com.qs.ai.admian.service.dto.AiChatOptions;
 import com.qs.ai.admian.service.dto.AiChatMessage;
+import com.qs.ai.admian.service.dto.AiModelProvider;
 import com.qs.ai.admian.service.dto.ChatContextMessage;
-import com.qs.ai.admian.service.dto.QwenChatResult;
+import com.qs.ai.admian.util.AiApiUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -53,11 +55,11 @@ public class ChatController {
 
     private final AiChatRecordService aiChatRecordService;
     private final ChatContextService chatContextService;
-    private final QwenChatService qwenChatService;
+    private final AiApiUtil aiApiUtil;
 
     @Operation(
             summary = "Send chat message",
-            description = "Requires JWT token. Calls Qwen API with non-streaming response and saves messages into ai_chat_record."
+            description = "Requires JWT token. Auto routes to Qwen or DeepSeek by provider/model and saves messages into ai_chat_record."
     )
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses(value = {
@@ -82,6 +84,7 @@ public class ChatController {
                                                      HttpServletRequest httpServletRequest) {
         String loginUserId = String.valueOf(httpServletRequest.getAttribute("loginUserId"));
         String conversationId = resolveConversationId(request);
+        AiModelProvider provider = resolveProvider(request);
         String model = resolveModel(request);
         Double temperature = resolveTemperature(request);
         Long userId = Long.valueOf(loginUserId);
@@ -92,7 +95,16 @@ public class ChatController {
         long startTime = System.currentTimeMillis();
         saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0);
         try {
-            QwenChatResult chatResult = qwenChatService.chat(model, messages, temperature);
+            AiApiChatResult chatResult = aiApiUtil.chat(
+                    provider,
+                    messages,
+                    AiChatOptions.builder()
+                            .model(model)
+                            .temperature(temperature)
+                            .maxTokens(1024)
+                            .maxInputTokens(4000)
+                            .build()
+            );
             int latencyMs = elapsedMs(startTime);
 
             saveAssistantMessage(conversationId, userId, chatResult, model, latencyMs, null);
@@ -122,6 +134,7 @@ public class ChatController {
         String loginUserId = String.valueOf(httpServletRequest.getAttribute("loginUserId"));
         Long userId = Long.valueOf(loginUserId);
         String conversationId = resolveConversationId(request);
+        AiModelProvider provider = resolveProvider(request);
         String model = resolveModel(request);
         Double temperature = resolveTemperature(request);
         List<AiChatMessage> currentMessages = resolveMessages(request);
@@ -141,7 +154,16 @@ public class ChatController {
             long startTime = System.currentTimeMillis();
             try {
                 saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0);
-                QwenChatResult result = qwenChatService.streamChat(model, messages, temperature, content -> {
+                AiApiChatResult result = aiApiUtil.streamChat(
+                        provider,
+                        messages,
+                        AiChatOptions.builder()
+                                .model(model)
+                                .temperature(temperature)
+                                .maxTokens(1024)
+                                .maxInputTokens(4000)
+                                .build(),
+                        content -> {
                     sendCharacters(emitter, closed, content);
                 });
                 saveAssistantMessage(conversationId, userId, result, model, elapsedMs(startTime), null);
@@ -210,7 +232,21 @@ public class ChatController {
     }
 
     private String resolveModel(ChatSendRequest request) {
-        return StringUtils.hasText(request.getModel()) ? request.getModel() : DEFAULT_MODEL;
+        if (StringUtils.hasText(request.getModel())) {
+            return request.getModel();
+        }
+        return resolveProvider(request) == AiModelProvider.DEEPSEEK ? "deepseek-chat" : DEFAULT_MODEL;
+    }
+
+    private AiModelProvider resolveProvider(ChatSendRequest request) {
+        if (StringUtils.hasText(request.getProvider())) {
+            return AiModelProvider.valueOf(request.getProvider().toUpperCase());
+        }
+        String model = request.getModel();
+        if (StringUtils.hasText(model) && model.toLowerCase().startsWith("deepseek")) {
+            return AiModelProvider.DEEPSEEK;
+        }
+        return AiModelProvider.QWEN;
     }
 
     private Double resolveTemperature(ChatSendRequest request) {
@@ -284,7 +320,7 @@ public class ChatController {
 
     private void saveAssistantMessage(String conversationId,
                                       Long userId,
-                                      QwenChatResult chatResult,
+                                      AiApiChatResult chatResult,
                                       String model,
                                       int latencyMs,
                                       String errorMessage) {
@@ -311,7 +347,7 @@ public class ChatController {
                                            String model,
                                            int latencyMs,
                                            Exception ex) {
-        QwenChatResult errorResult = QwenChatResult.builder()
+        AiApiChatResult errorResult = AiApiChatResult.builder()
                 .answer("")
                 .promptTokens(0)
                 .completionTokens(0)

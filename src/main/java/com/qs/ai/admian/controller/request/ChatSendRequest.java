@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.util.List;
@@ -17,6 +18,10 @@ public class ChatSendRequest {
 
     @Schema(description = "Conversation id, optional for first message", example = "conv-001")
     private String conversationId;
+
+    @Schema(description = "AI provider. Use QWEN for qwen models, DEEPSEEK for deepseek models. Auto-detect by model if empty.", example = "QWEN", allowableValues = {"QWEN", "DEEPSEEK"})
+    @Pattern(regexp = "^(QWEN|DEEPSEEK|qwen|deepseek)?$", message = "provider must be QWEN or DEEPSEEK")
+    private String provider;
 
     @Schema(description = "LLM model name", example = "qwen-turbo", defaultValue = "qwen-turbo")
     private String model = "qwen-turbo";
