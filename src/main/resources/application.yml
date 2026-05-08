@@ -30,6 +30,11 @@ springdoc:
 jwt:
   secret: ${JWT_SECRET:ReplaceWithAtLeast32BytesSecretKeyForJwtAuth123456}
 
+dashscope:
+  api-key: ${DASHSCOPE_API_KEY:}
+  base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com}
+  chat-path: /compatible-mode/v1/chat/completions
+
 logging:
   level:
     org.springframework.boot.autoconfigure: INFO
