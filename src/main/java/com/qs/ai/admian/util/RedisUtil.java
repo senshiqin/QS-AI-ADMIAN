@@ -126,6 +126,10 @@ public class RedisUtil {
         return list == null ? Collections.emptyList() : list;
     }
 
+    public void lTrim(String key, long start, long end) {
+        redisTemplate.opsForList().trim(key, start, end);
+    }
+
     public Long lSize(String key) {
         Long size = redisTemplate.opsForList().size(key);
         return size == null ? 0L : size;

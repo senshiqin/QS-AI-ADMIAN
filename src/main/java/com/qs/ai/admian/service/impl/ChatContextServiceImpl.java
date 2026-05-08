@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 public class ChatContextServiceImpl implements ChatContextService {
 
     private static final long CONTEXT_EXPIRE_MINUTES = 60L;
+    private static final long MAX_CONTEXT_MESSAGES = 10L;
     private static final String CONTEXT_KEY_PREFIX = "ai:chat:context:";
 
     private final RedisUtil redisUtil;
@@ -37,6 +38,7 @@ public class ChatContextServiceImpl implements ChatContextService {
                 .timestamp(LocalDateTime.now())
                 .build();
         redisUtil.lRightPush(key, message);
+        trimContext(key);
         redisUtil.expire(key, CONTEXT_EXPIRE_MINUTES, TimeUnit.MINUTES);
     }
 
@@ -66,6 +68,10 @@ public class ChatContextServiceImpl implements ChatContextService {
 
     private String buildKey(Long userId, String conversationId) {
         return CONTEXT_KEY_PREFIX + userId + ":" + conversationId;
+    }
+
+    private void trimContext(String key) {
+        redisUtil.lTrim(key, -MAX_CONTEXT_MESSAGES, -1);
     }
 
     private void validateInput(Long userId, String conversationId, String role, String content) {
