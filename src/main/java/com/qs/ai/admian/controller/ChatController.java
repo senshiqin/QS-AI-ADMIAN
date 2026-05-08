@@ -5,8 +5,10 @@ import com.qs.ai.admian.controller.response.ChatSendResponse;
 import com.qs.ai.admian.entity.AiChatRecord;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiChatRecordService;
+import com.qs.ai.admian.service.ChatContextService;
 import com.qs.ai.admian.service.QwenChatService;
 import com.qs.ai.admian.service.dto.AiChatMessage;
+import com.qs.ai.admian.service.dto.ChatContextMessage;
 import com.qs.ai.admian.service.dto.QwenChatResult;
 import com.qs.ai.admian.util.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -50,6 +52,7 @@ public class ChatController {
     private static final long SSE_TIMEOUT_MS = 120_000L;
 
     private final AiChatRecordService aiChatRecordService;
+    private final ChatContextService chatContextService;
     private final QwenChatService qwenChatService;
 
     @Operation(
@@ -81,24 +84,31 @@ public class ChatController {
         String conversationId = resolveConversationId(request);
         String model = resolveModel(request);
         Double temperature = resolveTemperature(request);
-        List<AiChatMessage> messages = resolveMessages(request);
-        AiChatMessage lastUserMessage = findLastUserMessage(messages);
+        Long userId = Long.valueOf(loginUserId);
+        List<AiChatMessage> currentMessages = resolveMessages(request);
+        List<AiChatMessage> messages = buildMessagesWithContext(userId, conversationId, currentMessages);
+        AiChatMessage lastUserMessage = findLastUserMessage(currentMessages);
 
         long startTime = System.currentTimeMillis();
-        QwenChatResult chatResult = qwenChatService.chat(model, messages, temperature);
-        int latencyMs = elapsedMs(startTime);
+        saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0);
+        try {
+            QwenChatResult chatResult = qwenChatService.chat(model, messages, temperature);
+            int latencyMs = elapsedMs(startTime);
 
-        saveUserMessage(conversationId, Long.valueOf(loginUserId), lastUserMessage.getContent(), model,
-                defaultInt(chatResult.promptTokens()));
-        saveAssistantMessage(conversationId, Long.valueOf(loginUserId), chatResult, model, latencyMs, null);
+            saveAssistantMessage(conversationId, userId, chatResult, model, latencyMs, null);
+            addContextPair(userId, conversationId, lastUserMessage.getContent(), chatResult.answer());
 
-        ChatSendResponse response = ChatSendResponse.builder()
-                .conversationId(conversationId)
-                .modelType(model)
-                .answer(chatResult.answer())
-                .totalTokens(defaultInt(chatResult.totalTokens()))
-                .build();
-        return ApiResponse.success("Chat success", response);
+            ChatSendResponse response = ChatSendResponse.builder()
+                    .conversationId(conversationId)
+                    .modelType(model)
+                    .answer(chatResult.answer())
+                    .totalTokens(defaultInt(chatResult.totalTokens()))
+                    .build();
+            return ApiResponse.success("Chat success", response);
+        } catch (RuntimeException ex) {
+            saveErrorAssistantMessage(conversationId, userId, model, elapsedMs(startTime), ex);
+            throw ex;
+        }
     }
 
     @Operation(
@@ -114,8 +124,9 @@ public class ChatController {
         String conversationId = resolveConversationId(request);
         String model = resolveModel(request);
         Double temperature = resolveTemperature(request);
-        List<AiChatMessage> messages = resolveMessages(request);
-        AiChatMessage lastUserMessage = findLastUserMessage(messages);
+        List<AiChatMessage> currentMessages = resolveMessages(request);
+        List<AiChatMessage> messages = buildMessagesWithContext(userId, conversationId, currentMessages);
+        AiChatMessage lastUserMessage = findLastUserMessage(currentMessages);
 
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         AtomicBoolean closed = new AtomicBoolean(false);
@@ -134,6 +145,7 @@ public class ChatController {
                     sendCharacters(emitter, closed, content);
                 });
                 saveAssistantMessage(conversationId, userId, result, model, elapsedMs(startTime), null);
+                addContextPair(userId, conversationId, lastUserMessage.getContent(), result.answer());
                 sendEvent(emitter, closed, "done", "[DONE]");
                 completeEmitter(emitter, closed);
             } catch (Exception ex) {
@@ -228,6 +240,30 @@ public class ChatController {
             }
         }
         throw new ParamException("messages must contain at least one user message");
+    }
+
+    private List<AiChatMessage> buildMessagesWithContext(Long userId,
+                                                         String conversationId,
+                                                         List<AiChatMessage> currentMessages) {
+        List<AiChatMessage> messages = new ArrayList<>();
+        List<ChatContextMessage> contextMessages = chatContextService.getContextMessages(userId, conversationId);
+        for (ChatContextMessage contextMessage : contextMessages) {
+            if (StringUtils.hasText(contextMessage.getRole()) && StringUtils.hasText(contextMessage.getContent())) {
+                messages.add(AiChatMessage.builder()
+                        .role(contextMessage.getRole())
+                        .content(contextMessage.getContent())
+                        .build());
+            }
+        }
+        messages.addAll(currentMessages);
+        return messages;
+    }
+
+    private void addContextPair(Long userId, String conversationId, String userContent, String assistantContent) {
+        chatContextService.addContextMessage(userId, conversationId, "user", userContent);
+        if (StringUtils.hasText(assistantContent)) {
+            chatContextService.addContextMessage(userId, conversationId, "assistant", assistantContent);
+        }
     }
 
     private void saveUserMessage(String conversationId, Long userId, String content, String model, int promptTokens) {
