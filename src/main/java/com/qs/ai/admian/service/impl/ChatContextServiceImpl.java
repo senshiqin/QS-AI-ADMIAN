@@ -43,6 +43,32 @@ public class ChatContextServiceImpl implements ChatContextService {
     }
 
     @Override
+    public void addContextMessages(Long userId, String conversationId, List<ChatContextMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        if (userId == null) {
+            throw new IllegalArgumentException("userId must not be null");
+        }
+        if (!StringUtils.hasText(conversationId)) {
+            throw new IllegalArgumentException("conversationId must not be blank");
+        }
+        for (ChatContextMessage message : messages) {
+            validateInput(userId, conversationId, message.getRole(), message.getContent());
+            if (message.getTimestamp() == null) {
+                message.setTimestamp(LocalDateTime.now());
+            }
+        }
+        redisUtil.lRightPushAllTrimExpire(
+                buildKey(userId, conversationId),
+                messages,
+                MAX_CONTEXT_MESSAGES,
+                CONTEXT_EXPIRE_MINUTES,
+                TimeUnit.MINUTES
+        );
+    }
+
+    @Override
     public List<ChatContextMessage> getContextMessages(Long userId, String conversationId) {
         if (userId == null || !StringUtils.hasText(conversationId)) {
             return Collections.emptyList();

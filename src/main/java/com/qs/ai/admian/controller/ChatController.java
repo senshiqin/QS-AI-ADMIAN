@@ -23,6 +23,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -56,6 +58,8 @@ public class ChatController {
     private final AiChatRecordService aiChatRecordService;
     private final ChatContextService chatContextService;
     private final AiApiUtil aiApiUtil;
+    @Qualifier("aiTaskExecutor")
+    private final Executor aiTaskExecutor;
 
     @Operation(
             summary = "Send chat message",
@@ -93,7 +97,10 @@ public class ChatController {
         AiChatMessage lastUserMessage = findLastUserMessage(currentMessages);
 
         long startTime = System.currentTimeMillis();
-        saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0);
+        CompletableFuture<Void> userSaveFuture = runAsyncSafely(
+                "save user chat record",
+                () -> saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0)
+        );
         try {
             AiApiChatResult chatResult = aiApiUtil.chat(
                     provider,
@@ -107,8 +114,11 @@ public class ChatController {
             );
             int latencyMs = elapsedMs(startTime);
 
-            saveAssistantMessage(conversationId, userId, chatResult, model, latencyMs, null);
-            addContextPair(userId, conversationId, lastUserMessage.getContent(), chatResult.answer());
+            runAsyncSafely("save assistant chat record and context", () -> {
+                userSaveFuture.join();
+                saveAssistantMessage(conversationId, userId, chatResult, model, latencyMs, null);
+                addContextPair(userId, conversationId, lastUserMessage.getContent(), chatResult.answer());
+            });
 
             ChatSendResponse response = ChatSendResponse.builder()
                     .conversationId(conversationId)
@@ -118,7 +128,10 @@ public class ChatController {
                     .build();
             return ApiResponse.success("Chat success", response);
         } catch (RuntimeException ex) {
-            saveErrorAssistantMessage(conversationId, userId, model, elapsedMs(startTime), ex);
+            runAsyncSafely("save failed chat record", () -> {
+                userSaveFuture.join();
+                saveErrorAssistantMessage(conversationId, userId, model, elapsedMs(startTime), ex);
+            });
             throw ex;
         }
     }
@@ -152,8 +165,11 @@ public class ChatController {
 
         CompletableFuture.runAsync(() -> {
             long startTime = System.currentTimeMillis();
+            CompletableFuture<Void> userSaveFuture = runAsyncSafely(
+                    "save stream user chat record",
+                    () -> saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0)
+            );
             try {
-                saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0);
                 AiApiChatResult result = aiApiUtil.streamChat(
                         provider,
                         messages,
@@ -166,14 +182,18 @@ public class ChatController {
                         content -> {
                     sendCharacters(emitter, closed, content);
                 });
-                saveAssistantMessage(conversationId, userId, result, model, elapsedMs(startTime), null);
-                addContextPair(userId, conversationId, lastUserMessage.getContent(), result.answer());
                 sendEvent(emitter, closed, "done", "[DONE]");
                 completeEmitter(emitter, closed);
+                int latencyMs = elapsedMs(startTime);
+                runAsyncSafely("save stream assistant chat record and context", () -> {
+                    userSaveFuture.join();
+                    saveAssistantMessage(conversationId, userId, result, model, latencyMs, null);
+                    addContextPair(userId, conversationId, lastUserMessage.getContent(), result.answer());
+                });
             } catch (Exception ex) {
-                handleStreamError(emitter, closed, conversationId, userId, model, elapsedMs(startTime), ex);
+                handleStreamError(emitter, closed, conversationId, userId, model, elapsedMs(startTime), userSaveFuture, ex);
             }
-        });
+        }, aiTaskExecutor);
 
         return emitter;
     }
@@ -209,6 +229,7 @@ public class ChatController {
                                    Long userId,
                                    String model,
                                    int latencyMs,
+                                   CompletableFuture<Void> userSaveFuture,
                                    Exception ex) {
         if (closed.get()) {
             log.info("SSE client disconnected, conversationId={}", conversationId);
@@ -216,7 +237,10 @@ public class ChatController {
         }
 
         log.error("SSE chat stream failed, conversationId={}", conversationId, ex);
-        saveErrorAssistantMessage(conversationId, userId, model, latencyMs, ex);
+        runAsyncSafely("save stream failed chat record", () -> {
+            userSaveFuture.join();
+            saveErrorAssistantMessage(conversationId, userId, model, latencyMs, ex);
+        });
         try {
             sendEvent(emitter, closed, "error", ex.getMessage());
         } catch (IOException sendError) {
@@ -296,10 +320,30 @@ public class ChatController {
     }
 
     private void addContextPair(Long userId, String conversationId, String userContent, String assistantContent) {
-        chatContextService.addContextMessage(userId, conversationId, "user", userContent);
+        List<ChatContextMessage> messages = new ArrayList<>();
+        messages.add(ChatContextMessage.builder()
+                .role("user")
+                .content(userContent)
+                .timestamp(LocalDateTime.now())
+                .build());
         if (StringUtils.hasText(assistantContent)) {
-            chatContextService.addContextMessage(userId, conversationId, "assistant", assistantContent);
+            messages.add(ChatContextMessage.builder()
+                    .role("assistant")
+                    .content(assistantContent)
+                    .timestamp(LocalDateTime.now())
+                    .build());
         }
+        chatContextService.addContextMessages(userId, conversationId, messages);
+    }
+
+    private CompletableFuture<Void> runAsyncSafely(String taskName, Runnable task) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                task.run();
+            } catch (Exception ex) {
+                log.error("Async task failed, taskName={}", taskName, ex);
+            }
+        }, aiTaskExecutor);
     }
 
     private void saveUserMessage(String conversationId, Long userId, String content, String model, int promptTokens) {

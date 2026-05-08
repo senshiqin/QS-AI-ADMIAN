@@ -1,7 +1,9 @@
 package com.qs.ai.admian.util;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.stereotype.Component;
 
 import java.util.Collection;
@@ -119,6 +121,26 @@ public class RedisUtil {
             return redisTemplate.opsForList().size(key);
         }
         return redisTemplate.opsForList().rightPushAll(key, values);
+    }
+
+    public void lRightPushAllTrimExpire(String key,
+                                        List<?> values,
+                                        long maxSize,
+                                        long timeout,
+                                        TimeUnit unit) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        redisTemplate.executePipelined(new SessionCallback<Object>() {
+            @Override
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            public Object execute(RedisOperations operations) {
+                operations.opsForList().rightPushAll(key, values);
+                operations.opsForList().trim(key, -maxSize, -1);
+                operations.expire(key, timeout, unit);
+                return null;
+            }
+        });
     }
 
     public List<Object> lRange(String key, long start, long end) {

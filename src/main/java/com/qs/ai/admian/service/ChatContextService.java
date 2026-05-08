@@ -20,6 +20,15 @@ public interface ChatContextService {
     void addContextMessage(Long userId, String conversationId, String role, String content);
 
     /**
+     * Add multiple messages and trim context in one Redis pipeline.
+     *
+     * @param userId user id
+     * @param conversationId conversation id
+     * @param messages ordered messages
+     */
+    void addContextMessages(Long userId, String conversationId, List<ChatContextMessage> messages);
+
+    /**
      * Load full context list for one conversation.
      *
      * @param userId user id
