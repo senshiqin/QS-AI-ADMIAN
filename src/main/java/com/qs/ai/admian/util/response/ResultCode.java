@@ -16,6 +16,7 @@ public enum ResultCode {
     NULL_POINTER_ERROR(5001, "Null pointer error"),
     FILE_UPLOAD_ERROR(5200, "File upload error"),
     TEXT_PARSE_ERROR(5201, "Text parse error"),
+    VECTOR_STORE_ERROR(5202, "Vector store error"),
     AI_SERVICE_ERROR(5100, "AI service error"),
     AI_KNOWLEDGE_EMPTY(5101, "Knowledge base no result"),
     AI_API_CALL_FAILED(5102, "AI API call failed");

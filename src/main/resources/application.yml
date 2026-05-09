@@ -43,6 +43,19 @@ dashscope:
   embedding-batch-size: ${DASHSCOPE_EMBEDDING_BATCH_SIZE:10}
   embedding-dimensions: ${DASHSCOPE_EMBEDDING_DIMENSIONS:1024}
 
+milvus:
+  uri: ${MILVUS_URI:http://localhost:19530}
+  token: ${MILVUS_TOKEN:}
+  database-name: ${MILVUS_DATABASE_NAME:default}
+  collection-name: ${MILVUS_COLLECTION_NAME:qs_ai_knowledge_chunks}
+  dimension: ${MILVUS_DIMENSION:${dashscope.embedding-dimensions}}
+  auto-create-collection: ${MILVUS_AUTO_CREATE_COLLECTION:false}
+  metric-type: ${MILVUS_METRIC_TYPE:COSINE}
+  index-type: ${MILVUS_INDEX_TYPE:AUTOINDEX}
+  content-max-length: ${MILVUS_CONTENT_MAX_LENGTH:8192}
+  connect-timeout-ms: ${MILVUS_CONNECT_TIMEOUT_MS:5000}
+  rpc-deadline-ms: ${MILVUS_RPC_DEADLINE_MS:60000}
+
 deepseek:
   api-key: ${DEEPSEEK_API_KEY:}
   base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}

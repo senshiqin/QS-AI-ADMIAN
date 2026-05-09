@@ -67,6 +67,10 @@ public class AiEmbeddingUtil {
                 .toList();
     }
 
+    public String getEmbeddingModel() {
+        return dashScopeProperties.getEmbeddingModel();
+    }
+
     private List<float[]> callEmbeddingApi(List<String> texts) {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", dashScopeProperties.getEmbeddingModel());

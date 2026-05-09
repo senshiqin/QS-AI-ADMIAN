@@ -44,7 +44,7 @@ public final class TextParseUtil {
             return switch (extension) {
                 case "pdf" -> parsePdf(filePath);
                 case "docx" -> parseDocx(filePath);
-                case "txt" -> parseTxt(filePath);
+                case "txt", "md" -> parseTxt(filePath);
                 default -> throw new ParamException("unsupported text parse file type: " + extension);
             };
         } catch (IOException ex) {
@@ -69,7 +69,7 @@ public final class TextParseUtil {
             return switch (extension) {
                 case "pdf" -> parsePdf(inputStream);
                 case "docx" -> parseDocx(inputStream);
-                case "txt" -> parseTxt(inputStream);
+                case "txt", "md" -> parseTxt(inputStream);
                 default -> throw new ParamException("unsupported text parse file type: " + extension);
             };
         } catch (IOException ex) {
