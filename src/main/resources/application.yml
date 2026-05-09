@@ -5,6 +5,10 @@ spring:
     name: qs-ai-admian
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 500MB
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
@@ -43,6 +47,10 @@ deepseek:
 ai:
   rate-limit:
     chat-per-minute: ${AI_CHAT_RATE_LIMIT_PER_MINUTE:10}
+
+file:
+  upload:
+    base-dir: ${FILE_UPLOAD_BASE_DIR:uploads/files}
 
 logging:
   level:

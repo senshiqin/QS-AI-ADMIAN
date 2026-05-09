@@ -14,6 +14,9 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.stream.Collectors;
@@ -64,6 +67,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
             MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class
     })
@@ -71,6 +75,21 @@ public class GlobalExceptionHandler {
         log.warn("Request parameter error, uri={}, method={}, message={}",
                 request.getRequestURI(), request.getMethod(), ex.getMessage());
         return ApiResponse.fail(ResultCode.BAD_REQUEST.getCode(), "Request parameter error: " + ex.getMessage());
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ApiResponse<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex,
+                                                                  HttpServletRequest request) {
+        log.warn("Upload size exceeded, uri={}, method={}, message={}",
+                request.getRequestURI(), request.getMethod(), ex.getMessage());
+        return ApiResponse.fail(ResultCode.PARAM_INVALID.getCode(), "file size must be less than or equal to 100MB");
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ApiResponse<Void> handleMultipartException(MultipartException ex, HttpServletRequest request) {
+        log.warn("Multipart upload error, uri={}, method={}, message={}",
+                request.getRequestURI(), request.getMethod(), ex.getMessage());
+        return ApiResponse.fail(ResultCode.BAD_REQUEST.getCode(), "Multipart upload error: " + ex.getMessage());
     }
 
     @ExceptionHandler(AiApiException.class)
