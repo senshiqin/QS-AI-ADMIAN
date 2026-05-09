@@ -20,6 +20,8 @@ public interface MilvusVectorService {
 
     List<MilvusSearchResult> search(float[] queryVector, int topK);
 
+    List<MilvusSearchResult> search(float[] queryVector, int topK, float minScore);
+
     List<MilvusSearchResult> queryByFileId(Long fileId, int limit);
 
     long deleteByChunkId(String chunkId);

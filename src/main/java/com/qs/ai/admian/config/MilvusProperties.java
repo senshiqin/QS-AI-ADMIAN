@@ -28,6 +28,8 @@ public class MilvusProperties {
 
     private Integer contentMaxLength = 8192;
 
+    private Float similarityThreshold = 0.7F;
+
     private Long connectTimeoutMs = 5000L;
 
     private Long rpcDeadlineMs = 60000L;

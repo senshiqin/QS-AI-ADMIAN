@@ -53,6 +53,7 @@ milvus:
   metric-type: ${MILVUS_METRIC_TYPE:COSINE}
   index-type: ${MILVUS_INDEX_TYPE:AUTOINDEX}
   content-max-length: ${MILVUS_CONTENT_MAX_LENGTH:8192}
+  similarity-threshold: ${MILVUS_SIMILARITY_THRESHOLD:0.7}
   connect-timeout-ms: ${MILVUS_CONNECT_TIMEOUT_MS:5000}
   rpc-deadline-ms: ${MILVUS_RPC_DEADLINE_MS:60000}
 

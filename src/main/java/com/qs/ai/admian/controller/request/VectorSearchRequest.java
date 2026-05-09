@@ -8,6 +8,7 @@ import java.util.List;
 public record VectorSearchRequest(
         String queryText,
         List<Float> vector,
-        Integer topK
+        Integer topK,
+        Float minScore
 ) {
 }

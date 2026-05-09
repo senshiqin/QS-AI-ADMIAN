@@ -164,6 +164,11 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
 
     @Override
     public List<MilvusSearchResult> search(float[] queryVector, int topK) {
+        return search(queryVector, topK, Float.NEGATIVE_INFINITY);
+    }
+
+    @Override
+    public List<MilvusSearchResult> search(float[] queryVector, int topK, float minScore) {
         validateVector(queryVector);
         int safeTopK = topK <= 0 ? 5 : topK;
 
@@ -183,6 +188,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
             }
             return response.getSearchResults().get(0).stream()
                     .map(this::toSearchResult)
+                    .filter(result -> result.score() != null && result.score() >= minScore)
                     .toList();
         } catch (MilvusVectorException | ParamException ex) {
             throw ex;

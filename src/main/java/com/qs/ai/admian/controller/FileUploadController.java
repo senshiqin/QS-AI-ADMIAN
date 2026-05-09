@@ -5,10 +5,9 @@ import com.qs.ai.admian.controller.response.FileVectorizeChunkResponse;
 import com.qs.ai.admian.controller.response.FileVectorizeResponse;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.FileUploadService;
-import com.qs.ai.admian.service.MilvusVectorService;
-import com.qs.ai.admian.service.dto.MilvusVectorRecord;
 import com.qs.ai.admian.service.dto.TextChunk;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
+import com.qs.ai.admian.util.MilvusVectorUtil;
 import com.qs.ai.admian.util.TextChunkUtil;
 import com.qs.ai.admian.util.TextParseUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
@@ -43,7 +42,7 @@ public class FileUploadController {
 
     private final FileUploadService fileUploadService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
-    private final MilvusVectorService milvusVectorService;
+    private final MilvusVectorUtil milvusVectorUtil;
 
     @Operation(
             summary = "Upload single file",
@@ -107,7 +106,7 @@ public class FileUploadController {
         int embeddingDimension = vectors.isEmpty() ? 0 : vectors.get(0).length;
         int safePreviewLimit = resolvePreviewLimit(previewLimit);
         long storedVectorCount = Boolean.TRUE.equals(storeToMilvus)
-                ? milvusVectorService.upsertBatch(buildMilvusRecords(chunks, vectors))
+                ? milvusVectorUtil.batchInsert(chunks, vectors)
                 : 0L;
 
         List<FileVectorizeChunkResponse> chunkPreviews = buildChunkPreviews(chunks, vectors, safePreviewLimit);
@@ -125,21 +124,6 @@ public class FileUploadController {
                 chunkPreviews
         );
         return ApiResponse.success("File parsed and vectorized", response);
-    }
-
-    private List<MilvusVectorRecord> buildMilvusRecords(List<TextChunk> chunks, List<float[]> vectors) {
-        return java.util.stream.IntStream.range(0, chunks.size())
-                .mapToObj(index -> {
-                    TextChunk chunk = chunks.get(index);
-                    return new MilvusVectorRecord(
-                            chunk.chunkId(),
-                            chunk.fileId(),
-                            chunk.chunkIndex(),
-                            chunk.content(),
-                            vectors.get(index)
-                    );
-                })
-                .toList();
     }
 
     private List<FileVectorizeChunkResponse> buildChunkPreviews(List<TextChunk> chunks,

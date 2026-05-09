@@ -10,6 +10,7 @@ import com.qs.ai.admian.service.MilvusVectorService;
 import com.qs.ai.admian.service.dto.MilvusSearchResult;
 import com.qs.ai.admian.service.dto.MilvusVectorRecord;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
+import com.qs.ai.admian.util.MilvusVectorUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -42,6 +43,7 @@ public class VectorController {
     private final MilvusVectorService milvusVectorService;
     private final MilvusProperties milvusProperties;
     private final AiEmbeddingUtil aiEmbeddingUtil;
+    private final MilvusVectorUtil milvusVectorUtil;
 
     @Operation(summary = "Create Milvus collection if absent")
     @SecurityRequirement(name = "bearerAuth")
@@ -78,7 +80,10 @@ public class VectorController {
     public ApiResponse<List<MilvusSearchResult>> search(@RequestBody VectorSearchRequest request) {
         float[] queryVector = resolveQueryVector(request);
         int topK = request.topK() == null || request.topK() <= 0 ? DEFAULT_TOP_K : request.topK();
-        return ApiResponse.success(milvusVectorService.search(queryVector, topK));
+        float minScore = request.minScore() == null || request.minScore() <= 0
+                ? milvusVectorUtil.getSimilarityThreshold()
+                : request.minScore();
+        return ApiResponse.success(milvusVectorUtil.similaritySearch(queryVector, topK, minScore));
     }
 
     @Operation(summary = "Query vector records by file id")
