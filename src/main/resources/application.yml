@@ -40,6 +40,10 @@ deepseek:
   base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
   chat-path: /chat/completions
 
+ai:
+  rate-limit:
+    chat-per-minute: ${AI_CHAT_RATE_LIMIT_PER_MINUTE:10}
+
 logging:
   level:
     org.springframework.boot.autoconfigure: INFO

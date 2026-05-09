@@ -10,6 +10,7 @@ public enum ResultCode {
     PARAM_INVALID(4001, "Parameter validation failed"),
     UNAUTHORIZED(401, "Unauthorized"),
     FORBIDDEN(403, "Forbidden"),
+    TOO_MANY_REQUESTS(429, "Too many requests"),
     NOT_FOUND(404, "Not found"),
     INTERNAL_ERROR(500, "Internal server error"),
     NULL_POINTER_ERROR(5001, "Null pointer error"),

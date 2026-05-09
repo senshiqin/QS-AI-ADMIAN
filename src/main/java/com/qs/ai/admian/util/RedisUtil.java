@@ -76,6 +76,10 @@ public class RedisUtil {
         return redisTemplate.getExpire(key, unit);
     }
 
+    public Long increment(String key) {
+        return redisTemplate.opsForValue().increment(key);
+    }
+
     public boolean hSet(String key, String hashKey, Object value) {
         try {
             redisTemplate.opsForHash().put(key, hashKey, value);
