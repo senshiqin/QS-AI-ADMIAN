@@ -1,6 +1,7 @@
 package com.qs.ai.admian.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qs.ai.admian.config.RagProperties;
 import com.qs.ai.admian.controller.response.FileUploadResponse;
 import com.qs.ai.admian.controller.response.RagIngestResponse;
 import com.qs.ai.admian.controller.response.RagRetrieveResponse;
@@ -30,11 +31,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -46,16 +51,13 @@ import java.util.stream.Collectors;
 public class RagServiceImpl implements RagService {
 
     private static final String DEFAULT_KB_CODE = "default";
-    private static final int DEFAULT_CHUNK_SIZE = 800;
-    private static final double DEFAULT_OVERLAP_RATIO = 0.10D;
-    private static final int DEFAULT_TOP_K = 5;
     private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
-    private static final double DEFAULT_TEMPERATURE = 0.3D;
 
     private final AiKnowledgeFileService aiKnowledgeFileService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
     private final MilvusVectorUtil milvusVectorUtil;
     private final AiApiUtil aiApiUtil;
+    private final RagProperties ragProperties;
 
     @Override
     public RagIngestResponse ingestFile(FileUploadResponse file,
@@ -68,8 +70,10 @@ public class RagServiceImpl implements RagService {
         }
         String safeKbCode = StringUtils.hasText(kbCode) ? kbCode : DEFAULT_KB_CODE;
         Long safeUploaderUserId = uploaderUserId == null ? 0L : uploaderUserId;
-        int safeChunkSize = chunkSize == null || chunkSize <= 0 ? DEFAULT_CHUNK_SIZE : chunkSize;
-        double safeOverlapRatio = overlapRatio == null || overlapRatio < 0 ? DEFAULT_OVERLAP_RATIO : overlapRatio;
+        int safeChunkSize = chunkSize == null || chunkSize <= 0 ? resolveDefaultChunkSize() : chunkSize;
+        double safeOverlapRatio = overlapRatio == null || overlapRatio < 0
+                ? resolveDefaultOverlapRatio()
+                : overlapRatio;
 
         AiKnowledgeFile knowledgeFile = saveParsingFile(file, safeKbCode, safeUploaderUserId);
         try {
@@ -127,9 +131,14 @@ public class RagServiceImpl implements RagService {
             throw new ParamException("queryText must not be blank");
         }
 
-        int safeTopK = topK == null || topK <= 0 ? DEFAULT_TOP_K : topK;
+        int safeTopK = topK == null || topK <= 0 ? resolveDefaultTopK() : topK;
+        float safeMinScore = minScore == null || minScore <= 0 ? resolveDefaultMinScore() : minScore;
+        int candidateTopK = safeTopK * resolveCandidateMultiplier();
         float[] queryVector = aiEmbeddingUtil.embed(cleanQuery);
-        List<MilvusSearchResult> searchResults = milvusVectorUtil.similaritySearch(queryVector, safeTopK, minScore == null ? 0 : minScore);
+        List<MilvusSearchResult> searchResults = refineSearchResults(
+                milvusVectorUtil.similaritySearch(queryVector, candidateTopK, safeMinScore),
+                safeTopK
+        );
         Map<Long, AiKnowledgeFile> fileMap = loadFileMap(searchResults);
         List<RagRetrievedChunkResponse> chunks = searchResults.stream()
                 .map(result -> toChunkResponse(result, fileMap.get(result.fileId())))
@@ -138,7 +147,7 @@ public class RagServiceImpl implements RagService {
         return new RagRetrieveResponse(
                 cleanQuery,
                 safeTopK,
-                minScore == null || minScore <= 0 ? milvusVectorUtil.getSimilarityThreshold() : minScore,
+                safeMinScore,
                 aiEmbeddingUtil.getEmbeddingModel(),
                 milvusVectorUtil.getEmbeddingDimension(),
                 chunks.size(),
@@ -156,7 +165,7 @@ public class RagServiceImpl implements RagService {
             throw new ParamException("retrieval result must not be null");
         }
         String safeModel = StringUtils.hasText(model) ? model : DEFAULT_QWEN_MODEL;
-        Double safeTemperature = temperature == null ? DEFAULT_TEMPERATURE : temperature;
+        Double safeTemperature = temperature == null ? resolveAnswerTemperature() : temperature;
         List<AiChatMessage> messages = List.of(
                 AiChatMessage.builder()
                         .role("system")
@@ -174,8 +183,8 @@ public class RagServiceImpl implements RagService {
                 AiChatOptions.builder()
                         .model(safeModel)
                         .temperature(safeTemperature)
-                        .maxTokens(1200)
-                        .maxInputTokens(6000)
+                        .maxTokens(resolveAnswerMaxTokens())
+                        .maxInputTokens(resolveMaxInputTokens())
                         .build(),
                 contentConsumer::accept
         );
@@ -236,6 +245,30 @@ public class RagServiceImpl implements RagService {
         );
     }
 
+    private List<MilvusSearchResult> refineSearchResults(List<MilvusSearchResult> results, int topK) {
+        if (results == null || results.isEmpty()) {
+            return List.of();
+        }
+        Set<String> seenContent = new LinkedHashSet<>();
+        List<MilvusSearchResult> refined = new ArrayList<>();
+        results.stream()
+                .filter(result -> StringUtils.hasText(result.content()))
+                .filter(result -> result.content().length() >= resolveMinChunkChars())
+                .sorted(Comparator.comparing(
+                        MilvusSearchResult::score,
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                ))
+                .forEach(result -> {
+                    String fingerprint = contentFingerprint(result.content());
+                    if (seenContent.add(fingerprint)) {
+                        refined.add(result);
+                    }
+                });
+        return refined.stream()
+                .limit(topK)
+                .toList();
+    }
+
     private String buildRagContext(List<RagRetrievedChunkResponse> chunks) {
         if (chunks.isEmpty()) {
             return "";
@@ -243,40 +276,66 @@ public class RagServiceImpl implements RagService {
         StringBuilder context = new StringBuilder();
         for (int i = 0; i < chunks.size(); i++) {
             RagRetrievedChunkResponse chunk = chunks.get(i);
-            context.append("[")
-                    .append(i + 1)
-                    .append("] ")
-                    .append(nullToEmpty(chunk.fileName()))
-                    .append(" #")
-                    .append(chunk.chunkIndex())
-                    .append(System.lineSeparator())
-                    .append(chunk.content())
-                    .append(System.lineSeparator());
+            String chunkBlock = "["
+                    + (i + 1)
+                    + "] 来源: "
+                    + nullToEmpty(chunk.fileName())
+                    + " | 文件ID: "
+                    + chunk.fileId()
+                    + " | 切片: "
+                    + chunk.chunkIndex()
+                    + " | 相似度: "
+                    + formatScore(chunk.score())
+                    + System.lineSeparator()
+                    + chunk.content()
+                    + System.lineSeparator();
+            if (context.length() + chunkBlock.length() > resolveMaxContextChars()) {
+                break;
+            }
+            context.append(chunkBlock);
         }
         return context.toString();
     }
 
     private String buildSystemPrompt() {
         return """
-                You are a RAG question answering assistant.
-                Answer strictly based on the provided reference chunks.
-                If the references do not contain enough information, say that the current knowledge base does not contain enough evidence.
-                Keep the answer concise, accurate, and cite source numbers like [1], [2] when useful.
+                你是一个严格基于知识库证据回答的 RAG 助手。
+
+                必须遵守：
+                1. 只能依据“参考资料”中的内容回答，不要使用没有证据支持的外部知识。
+                2. 如果参考资料不足以回答，直接说明“当前知识库没有足够依据回答该问题”，不要猜测。
+                3. 回答中涉及事实、结论、步骤时，尽量标注引用编号，例如 [1]、[2]。
+                4. 如果多个切片说法冲突，指出冲突并说明无法确认。
+                5. 回答要简洁、结构清晰，优先给出与用户问题直接相关的内容。
                 """;
     }
 
     private String buildUserPrompt(RagRetrieveResponse retrieval) {
-        return """
-                User question:
-                %s
-
-                Reference chunks:
-                %s
-
-                Please answer in Chinese.
-                """.formatted(retrieval.queryText(), StringUtils.hasText(retrieval.ragContext())
+        String context = StringUtils.hasText(retrieval.ragContext())
                 ? retrieval.ragContext()
-                : "No relevant reference chunks were retrieved.");
+                : "未检索到满足阈值的参考资料。";
+        return """
+                用户问题：
+                %s
+
+                参考资料：
+                %s
+
+                请基于上述参考资料用中文回答。若资料不足，请明确说明不能回答，并给出缺少什么信息。
+                """.formatted(retrieval.queryText(), context);
+    }
+
+    private String contentFingerprint(String content) {
+        String clean = TextParseUtil.cleanText(content);
+        int end = Math.min(clean.length(), 160);
+        return clean.substring(0, end);
+    }
+
+    private String formatScore(Float score) {
+        if (score == null) {
+            return "N/A";
+        }
+        return String.format(java.util.Locale.ROOT, "%.4f", score);
     }
 
     private String calculateSha256(String storagePath) {
@@ -296,5 +355,55 @@ public class RagServiceImpl implements RagService {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private int resolveDefaultChunkSize() {
+        Integer value = ragProperties.getDefaultChunkSize();
+        return value == null || value <= 0 ? 800 : value;
+    }
+
+    private double resolveDefaultOverlapRatio() {
+        Double value = ragProperties.getDefaultOverlapRatio();
+        return value == null || value < 0 ? 0.15D : value;
+    }
+
+    private int resolveDefaultTopK() {
+        Integer value = ragProperties.getDefaultTopK();
+        return value == null || value <= 0 ? 5 : value;
+    }
+
+    private float resolveDefaultMinScore() {
+        Float value = ragProperties.getDefaultMinScore();
+        return value == null || value <= 0 ? milvusVectorUtil.getSimilarityThreshold() : value;
+    }
+
+    private int resolveCandidateMultiplier() {
+        Integer value = ragProperties.getCandidateMultiplier();
+        return value == null || value <= 0 ? 3 : value;
+    }
+
+    private int resolveMaxContextChars() {
+        Integer value = ragProperties.getMaxContextChars();
+        return value == null || value <= 0 ? 6000 : value;
+    }
+
+    private int resolveMinChunkChars() {
+        Integer value = ragProperties.getMinChunkChars();
+        return value == null || value <= 0 ? 20 : value;
+    }
+
+    private int resolveAnswerMaxTokens() {
+        Integer value = ragProperties.getAnswerMaxTokens();
+        return value == null || value <= 0 ? 1200 : value;
+    }
+
+    private int resolveMaxInputTokens() {
+        Integer value = ragProperties.getMaxInputTokens();
+        return value == null || value <= 0 ? 6000 : value;
+    }
+
+    private double resolveAnswerTemperature() {
+        Double value = ragProperties.getAnswerTemperature();
+        return value == null || value < 0 ? 0.2D : value;
     }
 }

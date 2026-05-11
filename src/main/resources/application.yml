@@ -53,9 +53,21 @@ milvus:
   metric-type: ${MILVUS_METRIC_TYPE:COSINE}
   index-type: ${MILVUS_INDEX_TYPE:AUTOINDEX}
   content-max-length: ${MILVUS_CONTENT_MAX_LENGTH:8192}
-  similarity-threshold: ${MILVUS_SIMILARITY_THRESHOLD:0.7}
+  similarity-threshold: ${MILVUS_SIMILARITY_THRESHOLD:0.55}
   connect-timeout-ms: ${MILVUS_CONNECT_TIMEOUT_MS:5000}
   rpc-deadline-ms: ${MILVUS_RPC_DEADLINE_MS:60000}
+
+rag:
+  default-chunk-size: ${RAG_DEFAULT_CHUNK_SIZE:800}
+  default-overlap-ratio: ${RAG_DEFAULT_OVERLAP_RATIO:0.15}
+  default-top-k: ${RAG_DEFAULT_TOP_K:5}
+  default-min-score: ${RAG_DEFAULT_MIN_SCORE:0.55}
+  candidate-multiplier: ${RAG_CANDIDATE_MULTIPLIER:3}
+  max-context-chars: ${RAG_MAX_CONTEXT_CHARS:6000}
+  min-chunk-chars: ${RAG_MIN_CHUNK_CHARS:20}
+  answer-max-tokens: ${RAG_ANSWER_MAX_TOKENS:1200}
+  max-input-tokens: ${RAG_MAX_INPUT_TOKENS:6000}
+  answer-temperature: ${RAG_ANSWER_TEMPERATURE:0.2}
 
 deepseek:
   api-key: ${DEEPSEEK_API_KEY:}
