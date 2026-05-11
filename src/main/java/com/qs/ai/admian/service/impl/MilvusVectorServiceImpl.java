@@ -2,6 +2,7 @@ package com.qs.ai.admian.service.impl;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.qs.ai.admian.config.MilvusClientHolder;
 import com.qs.ai.admian.config.MilvusProperties;
 import com.qs.ai.admian.exception.MilvusVectorException;
 import com.qs.ai.admian.exception.ParamException;
@@ -50,7 +51,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
     private static final String CONTENT_FIELD = "content";
     private static final String VECTOR_FIELD = "embedding";
 
-    private final MilvusClientV2 milvusClient;
+    private final MilvusClientHolder milvusClientHolder;
     private final MilvusProperties milvusProperties;
 
     @PostConstruct
@@ -63,7 +64,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
     @Override
     public boolean hasCollection() {
         try {
-            return milvusClient.hasCollection(HasCollectionReq.builder()
+            return milvusClient().hasCollection(HasCollectionReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .build());
         } catch (Exception ex) {
@@ -105,13 +106,13 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
                     .dimension(resolveDimension())
                     .build());
 
-            milvusClient.createCollection(CreateCollectionReq.builder()
+            milvusClient().createCollection(CreateCollectionReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .description("QS AI knowledge chunks for RAG retrieval")
                     .collectionSchema(schema)
                     .build());
 
-            milvusClient.createIndex(CreateIndexReq.builder()
+            milvusClient().createIndex(CreateIndexReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .indexParams(List.of(IndexParam.builder()
                             .fieldName(VECTOR_FIELD)
@@ -122,7 +123,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
                     .sync(true)
                     .build());
 
-            milvusClient.loadCollection(LoadCollectionReq.builder()
+            milvusClient().loadCollection(LoadCollectionReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .sync(true)
                     .build());
@@ -149,7 +150,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
             List<JsonObject> data = records.stream()
                     .map(this::toJsonObject)
                     .toList();
-            UpsertResp response = milvusClient.upsert(UpsertReq.builder()
+            UpsertResp response = milvusClient().upsert(UpsertReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .data(data)
                     .build());
@@ -174,7 +175,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
 
         try {
             createCollectionIfAbsent();
-            SearchResp response = milvusClient.search(SearchReq.builder()
+            SearchResp response = milvusClient().search(SearchReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .annsField(VECTOR_FIELD)
                     .metricType(resolveMetricType())
@@ -204,7 +205,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
         }
 
         try {
-            QueryResp response = milvusClient.query(QueryReq.builder()
+            QueryResp response = milvusClient().query(QueryReq.builder()
                     .collectionName(milvusProperties.getCollectionName())
                     .filter(FILE_ID_FIELD + " == " + fileId)
                     .limit(limit <= 0 ? 100 : limit)
@@ -247,7 +248,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
 
     private long delete(DeleteReq request) {
         try {
-            DeleteResp response = milvusClient.delete(request);
+            DeleteResp response = milvusClient().delete(request);
             flush();
             return response.getDeleteCnt();
         } catch (Exception ex) {
@@ -336,9 +337,17 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
     }
 
     private void flush() {
-        milvusClient.flush(FlushReq.builder()
+        milvusClient().flush(FlushReq.builder()
                 .collectionNames(List.of(milvusProperties.getCollectionName()))
                 .build());
+    }
+
+    private MilvusClientV2 milvusClient() {
+        try {
+            return milvusClientHolder.getClient();
+        } catch (Exception ex) {
+            throw toMilvusException("connect to Milvus", ex);
+        }
     }
 
     private String truncateContent(String content) {
