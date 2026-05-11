@@ -1,9 +1,13 @@
 package com.qs.ai.admian.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qs.ai.admian.controller.request.RagAskRequest;
 import com.qs.ai.admian.controller.request.RagRetrieveRequest;
 import com.qs.ai.admian.controller.response.FileUploadResponse;
+import com.qs.ai.admian.controller.response.RagAnswerResponse;
 import com.qs.ai.admian.controller.response.RagIngestResponse;
 import com.qs.ai.admian.controller.response.RagRetrieveResponse;
+import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.FileUploadService;
 import com.qs.ai.admian.service.RagService;
 import com.qs.ai.admian.util.response.ApiResponse;
@@ -21,6 +25,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
  * Core RAG workflow APIs.
@@ -31,8 +42,14 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class RagController {
 
+    private static final long SSE_TIMEOUT_MS = 120_000L;
+    private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
+
     private final FileUploadService fileUploadService;
     private final RagService ragService;
+    private final ObjectMapper objectMapper;
+    @Qualifier("aiTaskExecutor")
+    private final Executor aiTaskExecutor;
 
     @Operation(summary = "Upload, parse, chunk, embed and store vectors into Milvus")
     @SecurityRequirement(name = "bearerAuth")
@@ -66,11 +83,74 @@ public class RagController {
         return ApiResponse.success("RAG chunks retrieved", response);
     }
 
+    @Operation(summary = "RAG question answering with Qwen streaming output")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping(value = "/ask/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter askStream(@Valid @RequestBody RagAskRequest request) {
+        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
+        AtomicBoolean closed = new AtomicBoolean(false);
+        emitter.onCompletion(() -> closed.set(true));
+        emitter.onTimeout(() -> {
+            closed.set(true);
+            emitter.complete();
+        });
+        emitter.onError(ex -> closed.set(true));
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                RagRetrieveResponse retrieval = ragService.retrieve(request.queryText(), request.topK(), request.minScore());
+                sendEvent(emitter, closed, "sources", retrieval.chunks());
+
+                AiApiChatResult result = ragService.streamAnswer(
+                        retrieval,
+                        request.model(),
+                        request.temperature(),
+                        content -> sendEvent(emitter, closed, "message", content)
+                );
+                RagAnswerResponse answerResponse = new RagAnswerResponse(
+                        retrieval.queryText(),
+                        result.answer(),
+                        request.model() == null || request.model().isBlank() ? DEFAULT_QWEN_MODEL : request.model(),
+                        retrieval.hitCount(),
+                        retrieval.chunks()
+                );
+                sendEvent(emitter, closed, "result", answerResponse);
+                sendEvent(emitter, closed, "done", "[DONE]");
+                completeEmitter(emitter, closed);
+            } catch (Exception ex) {
+                sendEvent(emitter, closed, "error", ex.getMessage());
+                completeEmitter(emitter, closed);
+            }
+        }, aiTaskExecutor);
+
+        return emitter;
+    }
+
     private Long resolveLoginUserId(HttpServletRequest request) {
         Object loginUserId = request.getAttribute("loginUserId");
         if (loginUserId == null) {
             return 0L;
         }
         return Long.valueOf(String.valueOf(loginUserId));
+    }
+
+    private void sendEvent(SseEmitter emitter, AtomicBoolean closed, String eventName, Object data) {
+        if (closed.get()) {
+            return;
+        }
+        try {
+            Object payload = data instanceof String ? data : objectMapper.writeValueAsString(data);
+            emitter.send(SseEmitter.event()
+                    .name(eventName)
+                    .data(payload));
+        } catch (IOException ex) {
+            closed.set(true);
+        }
+    }
+
+    private void completeEmitter(SseEmitter emitter, AtomicBoolean closed) {
+        if (closed.compareAndSet(false, true)) {
+            emitter.complete();
+        }
     }
 }

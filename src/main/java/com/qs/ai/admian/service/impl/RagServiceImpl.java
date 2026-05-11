@@ -9,8 +9,13 @@ import com.qs.ai.admian.entity.AiKnowledgeFile;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiKnowledgeFileService;
 import com.qs.ai.admian.service.RagService;
+import com.qs.ai.admian.service.dto.AiApiChatResult;
+import com.qs.ai.admian.service.dto.AiChatMessage;
+import com.qs.ai.admian.service.dto.AiChatOptions;
+import com.qs.ai.admian.service.dto.AiModelProvider;
 import com.qs.ai.admian.service.dto.MilvusSearchResult;
 import com.qs.ai.admian.service.dto.TextChunk;
+import com.qs.ai.admian.util.AiApiUtil;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
 import com.qs.ai.admian.util.MilvusVectorUtil;
 import com.qs.ai.admian.util.TextChunkUtil;
@@ -44,10 +49,13 @@ public class RagServiceImpl implements RagService {
     private static final int DEFAULT_CHUNK_SIZE = 800;
     private static final double DEFAULT_OVERLAP_RATIO = 0.10D;
     private static final int DEFAULT_TOP_K = 5;
+    private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
+    private static final double DEFAULT_TEMPERATURE = 0.3D;
 
     private final AiKnowledgeFileService aiKnowledgeFileService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
     private final MilvusVectorUtil milvusVectorUtil;
+    private final AiApiUtil aiApiUtil;
 
     @Override
     public RagIngestResponse ingestFile(FileUploadResponse file,
@@ -139,6 +147,40 @@ public class RagServiceImpl implements RagService {
         );
     }
 
+    @Override
+    public AiApiChatResult streamAnswer(RagRetrieveResponse retrieval,
+                                        String model,
+                                        Double temperature,
+                                        java.util.function.Consumer<String> contentConsumer) {
+        if (retrieval == null) {
+            throw new ParamException("retrieval result must not be null");
+        }
+        String safeModel = StringUtils.hasText(model) ? model : DEFAULT_QWEN_MODEL;
+        Double safeTemperature = temperature == null ? DEFAULT_TEMPERATURE : temperature;
+        List<AiChatMessage> messages = List.of(
+                AiChatMessage.builder()
+                        .role("system")
+                        .content(buildSystemPrompt())
+                        .build(),
+                AiChatMessage.builder()
+                        .role("user")
+                        .content(buildUserPrompt(retrieval))
+                        .build()
+        );
+
+        return aiApiUtil.streamChat(
+                AiModelProvider.QWEN,
+                messages,
+                AiChatOptions.builder()
+                        .model(safeModel)
+                        .temperature(safeTemperature)
+                        .maxTokens(1200)
+                        .maxInputTokens(6000)
+                        .build(),
+                contentConsumer::accept
+        );
+    }
+
     private AiKnowledgeFile saveParsingFile(FileUploadResponse file, String kbCode, Long uploaderUserId) {
         String fileHash = calculateSha256(file.storagePath());
         AiKnowledgeFile knowledgeFile = aiKnowledgeFileService.getOne(new LambdaQueryWrapper<AiKnowledgeFile>()
@@ -212,6 +254,29 @@ public class RagServiceImpl implements RagService {
                     .append(System.lineSeparator());
         }
         return context.toString();
+    }
+
+    private String buildSystemPrompt() {
+        return """
+                You are a RAG question answering assistant.
+                Answer strictly based on the provided reference chunks.
+                If the references do not contain enough information, say that the current knowledge base does not contain enough evidence.
+                Keep the answer concise, accurate, and cite source numbers like [1], [2] when useful.
+                """;
+    }
+
+    private String buildUserPrompt(RagRetrieveResponse retrieval) {
+        return """
+                User question:
+                %s
+
+                Reference chunks:
+                %s
+
+                Please answer in Chinese.
+                """.formatted(retrieval.queryText(), StringUtils.hasText(retrieval.ragContext())
+                ? retrieval.ragContext()
+                : "No relevant reference chunks were retrieved.");
     }
 
     private String calculateSha256(String storagePath) {
