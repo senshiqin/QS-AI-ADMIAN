@@ -24,6 +24,7 @@ public class LangChain4jRetrievalChain {
 
     private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
     private static final String DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
+    private static final String DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
     private static final String SYSTEM_PROMPT = """
             你是一个严格基于知识库证据回答的 RAG 助手。
             只能依据参考资料回答；如果参考资料不足，必须明确说明“当前知识库没有足够依据回答该问题”。
@@ -71,6 +72,7 @@ public class LangChain4jRetrievalChain {
         String safeProvider = StringUtils.hasText(provider) ? provider.trim().toLowerCase() : "qwen";
         ChatModel chatModel = switch (safeProvider) {
             case "deepseek" -> chatModels.get("deepSeekChatModel");
+            case "ollama", "llama", "local" -> chatModels.get("ollamaChatModel");
             case "qwen", "dashscope", "tongyi" -> chatModels.get("qwenChatModel");
             default -> throw new IllegalArgumentException("Unsupported model provider: " + provider);
         };
@@ -144,7 +146,13 @@ public class LangChain4jRetrievalChain {
         }
 
         private String defaultModelByProvider(String provider) {
-            return "deepseek".equalsIgnoreCase(provider) ? DEFAULT_DEEPSEEK_MODEL : DEFAULT_QWEN_MODEL;
+            if ("deepseek".equalsIgnoreCase(provider)) {
+                return DEFAULT_DEEPSEEK_MODEL;
+            }
+            if ("ollama".equalsIgnoreCase(provider) || "llama".equalsIgnoreCase(provider) || "local".equalsIgnoreCase(provider)) {
+                return DEFAULT_OLLAMA_MODEL;
+            }
+            return DEFAULT_QWEN_MODEL;
         }
     }
 

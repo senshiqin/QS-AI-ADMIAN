@@ -318,6 +318,7 @@ public class AiApiUtil {
                     deepSeekProperties.getConnectTimeoutMs(),
                     deepSeekProperties.getReadTimeoutMs()
             );
+            case OLLAMA -> throw new AiApiException("Ollama should be called through MultiModelChatUtil");
         };
     }
 

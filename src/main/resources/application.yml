@@ -74,6 +74,17 @@ deepseek:
   base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
   chat-path: /chat/completions
 
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  chat-path: ${OLLAMA_CHAT_PATH:/api/chat}
+  model: ${OLLAMA_MODEL:llama3.2:3b}
+  connect-timeout-ms: ${OLLAMA_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${OLLAMA_READ_TIMEOUT_MS:120000}
+  num-predict: ${OLLAMA_NUM_PREDICT:1024}
+  num-ctx: ${OLLAMA_NUM_CTX:4096}
+  num-thread: ${OLLAMA_NUM_THREAD:}
+  keep-alive: ${OLLAMA_KEEP_ALIVE:10m}
+
 ai:
   rate-limit:
     chat-per-minute: ${AI_CHAT_RATE_LIMIT_PER_MINUTE:10}

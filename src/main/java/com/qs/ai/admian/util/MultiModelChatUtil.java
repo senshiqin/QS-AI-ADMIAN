@@ -22,11 +22,15 @@ public class MultiModelChatUtil {
     private static final String DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
 
     private final AiApiUtil aiApiUtil;
+    private final OllamaChatUtil ollamaChatUtil;
 
     public AiApiChatResult chat(String provider,
                                 List<AiChatMessage> messages,
                                 AiChatOptions options) {
         AiModelProvider resolvedProvider = resolveProvider(provider);
+        if (resolvedProvider == AiModelProvider.OLLAMA) {
+            return ollamaChatUtil.chat(messages, withDefaultModel(resolvedProvider, options));
+        }
         return aiApiUtil.chat(resolvedProvider, messages, withDefaultModel(resolvedProvider, options));
     }
 
@@ -35,6 +39,9 @@ public class MultiModelChatUtil {
                                       AiChatOptions options,
                                       Consumer<String> contentConsumer) {
         AiModelProvider resolvedProvider = resolveProvider(provider);
+        if (resolvedProvider == AiModelProvider.OLLAMA) {
+            return ollamaChatUtil.streamChat(messages, withDefaultModel(resolvedProvider, options), contentConsumer);
+        }
         return aiApiUtil.streamChat(
                 resolvedProvider,
                 messages,
@@ -65,6 +72,10 @@ public class MultiModelChatUtil {
     }
 
     private String defaultModel(AiModelProvider provider) {
-        return provider == AiModelProvider.DEEPSEEK ? DEFAULT_DEEPSEEK_MODEL : DEFAULT_QWEN_MODEL;
+        return switch (provider) {
+            case DEEPSEEK -> DEFAULT_DEEPSEEK_MODEL;
+            case OLLAMA -> ollamaChatUtil.defaultModel();
+            case QWEN -> DEFAULT_QWEN_MODEL;
+        };
     }
 }

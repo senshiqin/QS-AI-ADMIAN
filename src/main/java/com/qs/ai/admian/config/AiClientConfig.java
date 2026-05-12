@@ -10,7 +10,7 @@ import org.springframework.web.client.RestClient;
  * HTTP clients for AI providers.
  */
 @Configuration
-@EnableConfigurationProperties({DashScopeProperties.class, DeepSeekProperties.class})
+@EnableConfigurationProperties({DashScopeProperties.class, DeepSeekProperties.class, OllamaProperties.class})
 public class AiClientConfig {
 
     @Bean

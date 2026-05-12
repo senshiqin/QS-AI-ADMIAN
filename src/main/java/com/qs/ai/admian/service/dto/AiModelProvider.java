@@ -6,5 +6,6 @@ package com.qs.ai.admian.service.dto;
 public enum AiModelProvider {
 
     QWEN,
-    DEEPSEEK
+    DEEPSEEK,
+    OLLAMA
 }
