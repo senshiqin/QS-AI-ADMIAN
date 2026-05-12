@@ -3,6 +3,7 @@ package com.qs.ai.admian;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 应用启动类。
@@ -11,6 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication
 @MapperScan("com.qs.ai.admian.mapper")
+@EnableScheduling
 public class QsAiAdmianApplication {
 
     public static void main(String[] args) {

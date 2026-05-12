@@ -1,5 +1,6 @@
 package com.qs.ai.admian.langchain4j;
 
+import com.qs.ai.admian.service.AiModelSelectionStrategy;
 import com.qs.ai.admian.service.dto.AiModelProvider;
 import com.qs.ai.admian.util.AiApiUtil;
 
@@ -8,7 +9,7 @@ import com.qs.ai.admian.util.AiApiUtil;
  */
 public class QwenChatModel extends ProviderChatModel {
 
-    public QwenChatModel(AiApiUtil aiApiUtil) {
-        super(aiApiUtil, AiModelProvider.QWEN, "qwen-turbo");
+    public QwenChatModel(AiApiUtil aiApiUtil, AiModelSelectionStrategy modelSelectionStrategy) {
+        super(aiApiUtil, modelSelectionStrategy, AiModelProvider.QWEN);
     }
 }

@@ -16,7 +16,6 @@ import java.util.List;
 public class QwenEmbeddingModel implements EmbeddingModel {
 
     private final AiEmbeddingUtil aiEmbeddingUtil;
-    private final int dimension;
 
     @Override
     public Response<List<Embedding>> embedAll(List<TextSegment> textSegments) {
@@ -29,7 +28,7 @@ public class QwenEmbeddingModel implements EmbeddingModel {
 
     @Override
     public int dimension() {
-        return dimension;
+        return aiEmbeddingUtil.getEmbeddingDimension();
     }
 
     @Override

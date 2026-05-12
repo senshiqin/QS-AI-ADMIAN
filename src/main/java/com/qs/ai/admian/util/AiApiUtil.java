@@ -3,8 +3,8 @@ package com.qs.ai.admian.util;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qs.ai.admian.config.DashScopeProperties;
-import com.qs.ai.admian.config.DeepSeekProperties;
+import com.qs.ai.admian.config.AiModelConfigRegistry;
+import com.qs.ai.admian.config.AiModelsProperties;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.service.AiApiService;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
@@ -44,8 +44,7 @@ public class AiApiUtil {
     private static final String DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
     private static final double DEFAULT_TEMPERATURE = 0.7D;
 
-    private final DashScopeProperties dashScopeProperties;
-    private final DeepSeekProperties deepSeekProperties;
+    private final AiModelConfigRegistry modelConfigRegistry;
     private final ObjectMapper objectMapper;
     private final AiApiService aiApiService;
 
@@ -302,24 +301,28 @@ public class AiApiUtil {
     private ProviderConfig resolveProviderConfig(AiModelProvider provider) {
         AiModelProvider safeProvider = provider == null ? AiModelProvider.QWEN : provider;
         return switch (safeProvider) {
-            case QWEN -> new ProviderConfig(
-                    "DashScope",
-                    dashScopeProperties.getApiKey(),
-                    buildUrl(dashScopeProperties.getBaseUrl(), dashScopeProperties.getChatPath()),
-                    DEFAULT_QWEN_MODEL,
-                    dashScopeProperties.getConnectTimeoutMs(),
-                    dashScopeProperties.getReadTimeoutMs()
-            );
-            case DEEPSEEK -> new ProviderConfig(
-                    "DeepSeek",
-                    deepSeekProperties.getApiKey(),
-                    buildUrl(deepSeekProperties.getBaseUrl(), deepSeekProperties.getChatPath()),
-                    DEFAULT_DEEPSEEK_MODEL,
-                    deepSeekProperties.getConnectTimeoutMs(),
-                    deepSeekProperties.getReadTimeoutMs()
-            );
+            case QWEN, DEEPSEEK -> {
+                // 每次调用都重新读取配置，使 /model-config/refresh 对下一次请求立即生效。
+                Map.Entry<String, AiModelsProperties.Model> entry =
+                        modelConfigRegistry.requireOpenAiCompatibleProvider(safeProvider);
+                AiModelsProperties.Model model = entry.getValue();
+                yield new ProviderConfig(
+                        StringUtils.hasText(model.getDisplayName()) ? model.getDisplayName() : entry.getKey(),
+                        model.getApiKey(),
+                        buildUrl(model.getBaseUrl(), model.getChatPath()),
+                        StringUtils.hasText(model.getDefaultModel())
+                                ? model.getDefaultModel()
+                                : defaultModel(safeProvider),
+                        model.getConnectTimeoutMs(),
+                        model.getReadTimeoutMs()
+                );
+            }
             case OLLAMA -> throw new AiApiException("Ollama should be called through MultiModelChatUtil");
         };
+    }
+
+    private String defaultModel(AiModelProvider provider) {
+        return provider == AiModelProvider.DEEPSEEK ? DEFAULT_DEEPSEEK_MODEL : DEFAULT_QWEN_MODEL;
     }
 
     private String buildUrl(String baseUrl, String path) {

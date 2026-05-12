@@ -1,6 +1,9 @@
 package com.qs.ai.admian.langchain4j;
 
 import com.qs.ai.admian.config.RagProperties;
+import com.qs.ai.admian.service.AiModelSelectionStrategy;
+import com.qs.ai.admian.service.dto.AiModelProvider;
+import com.qs.ai.admian.service.dto.SelectedAiModel;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
@@ -22,9 +25,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LangChain4jRetrievalChain {
 
-    private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
-    private static final String DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
-    private static final String DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
     private static final String SYSTEM_PROMPT = """
             你是一个严格基于知识库证据回答的 RAG 助手。
             只能依据参考资料回答；如果参考资料不足，必须明确说明“当前知识库没有足够依据回答该问题”。
@@ -43,10 +43,24 @@ public class LangChain4jRetrievalChain {
     private final MilvusRetriever milvusRetriever;
     private final Map<String, ChatModel> chatModels;
     private final RagProperties ragProperties;
+    private final AiModelSelectionStrategy modelSelectionStrategy;
 
     public Result run(String question, Options options) {
-        Options safeOptions = options == null ? Options.defaults(ragProperties) : options.withDefaults(ragProperties);
-        List<Content> contents = milvusRetriever.retrieve(question, safeOptions.topK(), safeOptions.minScore());
+        Options safeOptions = options == null ? Options.empty() : options;
+        SelectedAiModel selectedModel = modelSelectionStrategy.select(safeOptions.provider(), safeOptions.model());
+        int topK = safeOptions.topK() == null || safeOptions.topK() <= 0
+                ? resolveDefaultTopK()
+                : safeOptions.topK();
+        float minScore = safeOptions.minScore() == null || safeOptions.minScore() <= 0
+                ? resolveDefaultMinScore()
+                : safeOptions.minScore();
+        Double temperature = safeOptions.temperature() == null
+                ? selectedModel.temperature()
+                : safeOptions.temperature();
+        Integer maxTokens = safeOptions.maxTokens() == null || safeOptions.maxTokens() <= 0
+                ? selectedModel.maxTokens()
+                : safeOptions.maxTokens();
+        List<Content> contents = milvusRetriever.retrieve(question, topK, minScore);
         String context = buildContext(contents);
         String prompt = PromptTemplate.from(USER_PROMPT_TEMPLATE)
                 .apply(Map.of(
@@ -60,24 +74,22 @@ public class LangChain4jRetrievalChain {
                         SystemMessage.from(SYSTEM_PROMPT),
                         UserMessage.from(prompt)
                 ))
-                .modelName(safeOptions.model())
-                .temperature(safeOptions.temperature())
-                .maxOutputTokens(safeOptions.maxTokens())
+                .modelName(selectedModel.model())
+                .temperature(temperature)
+                .maxOutputTokens(maxTokens)
                 .build();
-        ChatResponse chatResponse = resolveChatModel(safeOptions.provider()).chat(chatRequest);
+        ChatResponse chatResponse = resolveChatModel(selectedModel.provider()).chat(chatRequest);
         return new Result(question, chatResponse.aiMessage().text(), contents, context, chatResponse);
     }
 
-    private ChatModel resolveChatModel(String provider) {
-        String safeProvider = StringUtils.hasText(provider) ? provider.trim().toLowerCase() : "qwen";
-        ChatModel chatModel = switch (safeProvider) {
-            case "deepseek" -> chatModels.get("deepSeekChatModel");
-            case "ollama", "llama", "local" -> chatModels.get("ollamaChatModel");
-            case "qwen", "dashscope", "tongyi" -> chatModels.get("qwenChatModel");
-            default -> throw new IllegalArgumentException("Unsupported model provider: " + provider);
+    private ChatModel resolveChatModel(AiModelProvider provider) {
+        ChatModel chatModel = switch (provider) {
+            case DEEPSEEK -> chatModels.get("deepSeekChatModel");
+            case OLLAMA -> chatModels.get("ollamaChatModel");
+            case QWEN -> chatModels.get("qwenChatModel");
         };
         if (chatModel == null) {
-            throw new IllegalStateException("ChatModel bean not found for provider: " + safeProvider);
+            throw new IllegalStateException("ChatModel bean not found for provider: " + provider);
         }
         return chatModel;
     }
@@ -122,37 +134,8 @@ public class LangChain4jRetrievalChain {
             Integer maxTokens
     ) {
 
-        private static Options defaults(RagProperties properties) {
-            return new Options(
-                    "qwen",
-                    properties.getDefaultTopK(),
-                    properties.getDefaultMinScore(),
-                    DEFAULT_QWEN_MODEL,
-                    properties.getAnswerTemperature(),
-                    properties.getAnswerMaxTokens()
-            );
-        }
-
-        private Options withDefaults(RagProperties properties) {
-            Options defaults = defaults(properties);
-            return new Options(
-                    StringUtils.hasText(provider) ? provider : defaults.provider(),
-                    topK == null || topK <= 0 ? defaults.topK() : topK,
-                    minScore == null || minScore <= 0 ? defaults.minScore() : minScore,
-                    StringUtils.hasText(model) ? model : defaultModelByProvider(StringUtils.hasText(provider) ? provider : defaults.provider()),
-                    temperature == null ? defaults.temperature() : temperature,
-                    maxTokens == null || maxTokens <= 0 ? defaults.maxTokens() : maxTokens
-            );
-        }
-
-        private String defaultModelByProvider(String provider) {
-            if ("deepseek".equalsIgnoreCase(provider)) {
-                return DEFAULT_DEEPSEEK_MODEL;
-            }
-            if ("ollama".equalsIgnoreCase(provider) || "llama".equalsIgnoreCase(provider) || "local".equalsIgnoreCase(provider)) {
-                return DEFAULT_OLLAMA_MODEL;
-            }
-            return DEFAULT_QWEN_MODEL;
+        private static Options empty() {
+            return new Options(null, null, null, null, null, null);
         }
     }
 
@@ -163,5 +146,15 @@ public class LangChain4jRetrievalChain {
             String context,
             ChatResponse chatResponse
     ) {
+    }
+
+    private int resolveDefaultTopK() {
+        Integer value = ragProperties.getDefaultTopK();
+        return value == null || value <= 0 ? 5 : value;
+    }
+
+    private float resolveDefaultMinScore() {
+        Float value = ragProperties.getDefaultMinScore();
+        return value == null || value <= 0 ? 0.55F : value;
     }
 }

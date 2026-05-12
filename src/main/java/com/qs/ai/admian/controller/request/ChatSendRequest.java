@@ -19,12 +19,13 @@ public class ChatSendRequest {
     @Schema(description = "Conversation id, optional for first message", example = "conv-001")
     private String conversationId;
 
-    @Schema(description = "AI provider. Use QWEN for qwen models, DEEPSEEK for deepseek models. Auto-detect by model if empty.", example = "QWEN", allowableValues = {"QWEN", "DEEPSEEK"})
-    @Pattern(regexp = "^(QWEN|DEEPSEEK|qwen|deepseek)?$", message = "provider must be QWEN or DEEPSEEK")
+    @Schema(description = "AI provider key or alias. Auto-detect by model prefix if empty.", example = "QWEN", allowableValues = {"QWEN", "DEEPSEEK", "OLLAMA", "LLAMA3"})
+    @Pattern(regexp = "^(QWEN|DEEPSEEK|OLLAMA|LLAMA3|qwen|deepseek|ollama|llama3)?$",
+            message = "provider must be QWEN, DEEPSEEK, OLLAMA or LLAMA3")
     private String provider;
 
-    @Schema(description = "LLM model name", example = "qwen-turbo", defaultValue = "qwen-turbo")
-    private String model = "qwen-turbo";
+    @Schema(description = "LLM model name. Uses configured default model if empty.", example = "qwen-turbo")
+    private String model;
 
     @Schema(description = "Chat messages")
     @Valid

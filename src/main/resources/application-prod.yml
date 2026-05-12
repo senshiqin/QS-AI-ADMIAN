@@ -30,3 +30,14 @@ spring:
 logging:
   level:
     com.qs.ai.admian: INFO
+
+ai:
+  models:
+    selection:
+      default-provider: ${AI_DEFAULT_PROVIDER:qwen}
+      fallback-to-default: ${AI_MODEL_FALLBACK_TO_DEFAULT:false}
+    refresh:
+      auto: ${AI_MODEL_CONFIG_AUTO_REFRESH:false}
+    providers:
+      llama3:
+        enabled: ${LLAMA3_ENABLED:false}

@@ -21,22 +21,17 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OllamaLocalChatModel implements ChatModel {
 
-    private static final double DEFAULT_TEMPERATURE = 0.2D;
-    private static final int DEFAULT_MAX_TOKENS = 1024;
-
     private final OllamaChatUtil ollamaChatUtil;
 
     @Override
     public ChatResponse doChat(ChatRequest request) {
         String model = StringUtils.hasText(request.modelName()) ? request.modelName() : ollamaChatUtil.defaultModel();
-        Double temperature = request.temperature() == null ? DEFAULT_TEMPERATURE : request.temperature();
-        Integer maxTokens = request.maxOutputTokens() == null ? DEFAULT_MAX_TOKENS : request.maxOutputTokens();
         AiApiChatResult result = ollamaChatUtil.chat(
                 toAiChatMessages(request.messages()),
                 AiChatOptions.builder()
                         .model(model)
-                        .temperature(temperature)
-                        .maxTokens(maxTokens)
+                        .temperature(request.temperature())
+                        .maxTokens(request.maxOutputTokens())
                         .build()
         );
         return ChatResponse.builder()

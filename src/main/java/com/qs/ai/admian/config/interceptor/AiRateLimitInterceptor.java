@@ -38,8 +38,15 @@ public class AiRateLimitInterceptor implements HandlerInterceptor {
     @Value("${ai.rate-limit.chat-per-minute:10}")
     private long chatLimitPerMinute;
 
+    @Value("${ai.rate-limit.enabled:true}")
+    private boolean enabled;
+
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        if (!enabled) {
+            return true;
+        }
+
         String userId = String.valueOf(request.getAttribute("loginUserId"));
         if (userId == null || userId.isBlank() || "null".equals(userId)) {
             writeTooManyRequests(response, "User identity missing, please login again");

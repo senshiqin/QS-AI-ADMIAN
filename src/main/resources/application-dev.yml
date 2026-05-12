@@ -38,3 +38,29 @@ mybatis-plus:
 logging:
   level:
     com.qs.ai.admian: DEBUG
+
+ai:
+  models:
+    selection:
+      default-provider: ${AI_DEFAULT_PROVIDER:qwen}
+    refresh:
+      auto: ${AI_MODEL_CONFIG_AUTO_REFRESH:true}
+      interval-ms: ${AI_MODEL_CONFIG_REFRESH_INTERVAL_MS:30000}
+
+#ai:
+#    models:
+#        selection:
+#            default-provider: deepseek
+#        providers:
+#            qwen:
+#                default-model: qwen-plus
+#                temperature: 0.3
+
+#ai:
+#    models:
+#        selection:
+#            default-provider: qwen
+#            fallback-to-default: false
+#        providers:
+#            deepseek:
+#                enabled: false

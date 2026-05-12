@@ -2,11 +2,13 @@ package com.qs.ai.admian.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qs.ai.admian.config.OllamaProperties;
+import com.qs.ai.admian.config.AiModelConfigRegistry;
+import com.qs.ai.admian.config.AiModelsProperties;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.dto.AiChatMessage;
 import com.qs.ai.admian.service.dto.AiChatOptions;
+import com.qs.ai.admian.service.dto.AiModelProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -35,14 +37,15 @@ public class OllamaChatUtil {
 
     private static final String PROVIDER_NAME = "Ollama";
 
-    private final OllamaProperties properties;
+    private final AiModelConfigRegistry modelConfigRegistry;
     private final ObjectMapper objectMapper;
 
     public AiApiChatResult chat(List<AiChatMessage> messages, AiChatOptions options) {
-        Map<String, Object> requestBody = buildRequestBody(messages, options, false);
+        AiModelsProperties.Model modelConfig = resolveModelConfig();
+        Map<String, Object> requestBody = buildRequestBody(modelConfig, messages, options, false);
         try {
-            HttpResponse<String> response = buildHttpClient()
-                    .send(buildRequest(requestBody), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = buildHttpClient(modelConfig)
+                    .send(buildRequest(modelConfig, requestBody), HttpResponse.BodyHandlers.ofString());
             ensureSuccess(response.statusCode(), response.body());
             JsonNode root = objectMapper.readTree(response.body());
             return AiApiChatResult.builder()
@@ -62,11 +65,12 @@ public class OllamaChatUtil {
     public AiApiChatResult streamChat(List<AiChatMessage> messages,
                                       AiChatOptions options,
                                       Consumer<String> contentConsumer) {
-        Map<String, Object> requestBody = buildRequestBody(messages, options, true);
+        AiModelsProperties.Model modelConfig = resolveModelConfig();
+        Map<String, Object> requestBody = buildRequestBody(modelConfig, messages, options, true);
         StringBuilder answerBuilder = new StringBuilder();
         try {
-            HttpResponse<Stream<String>> response = buildHttpClient()
-                    .send(buildRequest(requestBody), HttpResponse.BodyHandlers.ofLines());
+            HttpResponse<Stream<String>> response = buildHttpClient(modelConfig)
+                    .send(buildRequest(modelConfig, requestBody), HttpResponse.BodyHandlers.ofLines());
             try (Stream<String> lines = response.body()) {
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     String errorBody = String.join("\n", lines.toList());
@@ -88,7 +92,7 @@ public class OllamaChatUtil {
     }
 
     public String defaultModel() {
-        return properties.getModel();
+        return resolveModelConfig().getDefaultModel();
     }
 
     private void handleStreamLine(String line, Consumer<String> contentConsumer, StringBuilder answerBuilder) {
@@ -107,45 +111,55 @@ public class OllamaChatUtil {
         }
     }
 
-    private Map<String, Object> buildRequestBody(List<AiChatMessage> messages,
+    private Map<String, Object> buildRequestBody(AiModelsProperties.Model modelConfig,
+                                                 List<AiChatMessage> messages,
                                                  AiChatOptions options,
                                                  boolean stream) {
         AiChatOptions safeOptions = options == null ? AiChatOptions.builder().build() : options;
+        AiModelsProperties.Ollama ollama = modelConfig.getOllama();
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", StringUtils.hasText(safeOptions.model()) ? safeOptions.model() : properties.getModel());
+        requestBody.put("model", StringUtils.hasText(safeOptions.model())
+                ? safeOptions.model()
+                : modelConfig.getDefaultModel());
         requestBody.put("messages", messages);
         requestBody.put("stream", stream);
-        requestBody.put("keep_alive", properties.getKeepAlive());
+        requestBody.put("keep_alive", ollama.getKeepAlive());
 
+        // Ollama 的模型参数放在 options 下，和 OpenAI-compatible 供应商不同。
         Map<String, Object> modelOptions = new HashMap<>();
-        modelOptions.put("temperature", safeOptions.temperature());
-        modelOptions.put("num_predict", safeOptions.maxTokens() == null ? properties.getNumPredict() : safeOptions.maxTokens());
-        modelOptions.put("num_ctx", properties.getNumCtx());
-        if (properties.getNumThread() != null && properties.getNumThread() > 0) {
-            modelOptions.put("num_thread", properties.getNumThread());
+        modelOptions.put("temperature", safeOptions.temperature() == null
+                ? modelConfig.getTemperature()
+                : safeOptions.temperature());
+        modelOptions.put("num_predict", safeOptions.maxTokens() == null
+                ? ollama.getNumPredict()
+                : safeOptions.maxTokens());
+        modelOptions.put("num_ctx", ollama.getNumCtx());
+        if (ollama.getNumThread() != null && ollama.getNumThread() > 0) {
+            modelOptions.put("num_thread", ollama.getNumThread());
         }
         requestBody.put("options", modelOptions);
         return requestBody;
     }
 
-    private HttpRequest buildRequest(Map<String, Object> requestBody) throws Exception {
+    private HttpRequest buildRequest(AiModelsProperties.Model modelConfig, Map<String, Object> requestBody)
+            throws Exception {
         return HttpRequest.newBuilder()
-                .uri(URI.create(buildUrl()))
-                .timeout(Duration.ofMillis(properties.getReadTimeoutMs()))
+                .uri(URI.create(buildUrl(modelConfig)))
+                .timeout(Duration.ofMillis(modelConfig.getReadTimeoutMs()))
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
                 .build();
     }
 
-    private HttpClient buildHttpClient() {
+    private HttpClient buildHttpClient(AiModelsProperties.Model modelConfig) {
         return HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(properties.getConnectTimeoutMs()))
+                .connectTimeout(Duration.ofMillis(modelConfig.getConnectTimeoutMs()))
                 .build();
     }
 
-    private String buildUrl() {
-        String baseUrl = properties.getBaseUrl();
-        String path = properties.getChatPath();
+    private String buildUrl(AiModelsProperties.Model modelConfig) {
+        String baseUrl = modelConfig.getBaseUrl();
+        String path = modelConfig.getChatPath();
         if (baseUrl.endsWith("/") && path.startsWith("/")) {
             return baseUrl.substring(0, baseUrl.length() - 1) + path;
         }
@@ -159,5 +173,13 @@ public class OllamaChatUtil {
         if (statusCode < 200 || statusCode >= 300) {
             throw new AiApiException(PROVIDER_NAME + " API failed, status=" + statusCode + ", body=" + body);
         }
+    }
+
+    private AiModelsProperties.Model resolveModelConfig() {
+        // 每次调用都读取注册表，使本地模型配置变更无需重启即可生效。
+        return modelConfigRegistry.findByProvider(AiModelProvider.OLLAMA)
+                .filter(entry -> modelConfigRegistry.isEnabled(entry.getValue()))
+                .map(Map.Entry::getValue)
+                .orElseThrow(() -> new AiApiException(PROVIDER_NAME + " model provider is not enabled"));
     }
 }

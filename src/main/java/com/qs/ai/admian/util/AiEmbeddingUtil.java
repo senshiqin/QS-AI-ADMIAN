@@ -2,16 +2,18 @@ package com.qs.ai.admian.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qs.ai.admian.config.DashScopeProperties;
+import com.qs.ai.admian.config.AiModelConfigRegistry;
+import com.qs.ai.admian.config.AiModelsProperties;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiApiService;
+import com.qs.ai.admian.service.dto.AiModelProvider;
 import dev.langchain4j.data.embedding.Embedding;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
@@ -32,12 +34,9 @@ public class AiEmbeddingUtil {
 
     private static final String PROVIDER_NAME = "DashScope Embedding";
 
-    private final DashScopeProperties dashScopeProperties;
+    private final AiModelConfigRegistry modelConfigRegistry;
     private final ObjectMapper objectMapper;
     private final AiApiService aiApiService;
-
-    @Qualifier("dashScopeRestClient")
-    private final RestClient dashScopeRestClient;
 
     public float[] embed(String text) {
         List<float[]> embeddings = embedBatch(List.of(text));
@@ -46,13 +45,14 @@ public class AiEmbeddingUtil {
 
     public List<float[]> embedBatch(List<String> texts) {
         List<String> cleanTexts = validateAndCleanTexts(texts);
-        aiApiService.validateApiKey(dashScopeProperties.getApiKey(), PROVIDER_NAME);
+        AiModelsProperties.Model modelConfig = resolveEmbeddingModelConfig();
+        aiApiService.validateApiKey(modelConfig.getApiKey(), PROVIDER_NAME);
 
-        int batchSize = resolveBatchSize();
+        int batchSize = resolveBatchSize(modelConfig);
         List<float[]> embeddings = new ArrayList<>(cleanTexts.size());
         for (int start = 0; start < cleanTexts.size(); start += batchSize) {
             int end = Math.min(start + batchSize, cleanTexts.size());
-            embeddings.addAll(callEmbeddingApi(cleanTexts.subList(start, end)));
+            embeddings.addAll(callEmbeddingApi(modelConfig, cleanTexts.subList(start, end)));
         }
         return embeddings;
     }
@@ -68,15 +68,21 @@ public class AiEmbeddingUtil {
     }
 
     public String getEmbeddingModel() {
-        return dashScopeProperties.getEmbeddingModel();
+        return resolveEmbeddingModelConfig().getEmbedding().getModel();
     }
 
-    private List<float[]> callEmbeddingApi(List<String> texts) {
+    public int getEmbeddingDimension() {
+        Integer dimensions = resolveEmbeddingModelConfig().getEmbedding().getDimensions();
+        return dimensions == null || dimensions <= 0 ? 1024 : dimensions;
+    }
+
+    private List<float[]> callEmbeddingApi(AiModelsProperties.Model modelConfig, List<String> texts) {
+        AiModelsProperties.Embedding embedding = modelConfig.getEmbedding();
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", dashScopeProperties.getEmbeddingModel());
+        requestBody.put("model", embedding.getModel());
         requestBody.put("input", texts);
         requestBody.put("encoding_format", "float");
-        Integer dimensions = dashScopeProperties.getEmbeddingDimensions();
+        Integer dimensions = embedding.getDimensions();
         if (dimensions != null && dimensions > 0) {
             requestBody.put("dimensions", dimensions);
         }
@@ -84,9 +90,9 @@ public class AiEmbeddingUtil {
         try {
             String responseBody = aiApiService.executeWithRetry(
                     PROVIDER_NAME + " API request",
-                    () -> dashScopeRestClient.post()
-                            .uri(dashScopeProperties.getEmbeddingPath())
-                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + dashScopeProperties.getApiKey())
+                    () -> buildRestClient(modelConfig).post()
+                            .uri(embedding.getPath())
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + modelConfig.getApiKey())
                             .contentType(MediaType.APPLICATION_JSON)
                             .body(requestBody)
                             .retrieve()
@@ -160,12 +166,30 @@ public class AiEmbeddingUtil {
         return cleanTexts;
     }
 
-    private int resolveBatchSize() {
-        Integer configuredBatchSize = dashScopeProperties.getEmbeddingBatchSize();
+    private int resolveBatchSize(AiModelsProperties.Model modelConfig) {
+        Integer configuredBatchSize = modelConfig.getEmbedding().getBatchSize();
         if (configuredBatchSize == null || configuredBatchSize <= 0) {
             return 10;
         }
         return Math.min(configuredBatchSize, 10);
+    }
+
+    private RestClient buildRestClient(AiModelsProperties.Model modelConfig) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(modelConfig.getConnectTimeoutMs());
+        requestFactory.setReadTimeout(modelConfig.getReadTimeoutMs());
+        return RestClient.builder()
+                .baseUrl(modelConfig.getBaseUrl())
+                .requestFactory(requestFactory)
+                .build();
+    }
+
+    private AiModelsProperties.Model resolveEmbeddingModelConfig() {
+        return modelConfigRegistry.findByProvider(AiModelProvider.QWEN)
+                .filter(entry -> modelConfigRegistry.isEnabled(entry.getValue()))
+                .map(Map.Entry::getValue)
+                .filter(model -> model.getEmbedding() != null && !Boolean.FALSE.equals(model.getEmbedding().getEnabled()))
+                .orElseThrow(() -> new AiApiException(PROVIDER_NAME + " provider is not enabled"));
     }
 
     private record EmbeddingItem(int index, float[] vector) {

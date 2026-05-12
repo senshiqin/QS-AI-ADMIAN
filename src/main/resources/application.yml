@@ -87,7 +87,81 @@ ollama:
 
 ai:
   rate-limit:
+    enabled: ${AI_RATE_LIMIT_ENABLED:true}
     chat-per-minute: ${AI_CHAT_RATE_LIMIT_PER_MINUTE:10}
+  models:
+    selection:
+      default-provider: ${AI_DEFAULT_PROVIDER:qwen}
+      fallback-to-default: ${AI_MODEL_FALLBACK_TO_DEFAULT:true}
+      model-prefix-routes:
+        qwen: qwen
+        deepseek: deepseek
+        llama: llama3
+        llama3: llama3
+    refresh:
+      auto: ${AI_MODEL_CONFIG_AUTO_REFRESH:false}
+      interval-ms: ${AI_MODEL_CONFIG_REFRESH_INTERVAL_MS:60000}
+      external-file: ${AI_MODEL_CONFIG_EXTERNAL_FILE:}
+    providers:
+      qwen:
+        enabled: ${QWEN_ENABLED:true}
+        provider: QWEN
+        display-name: 通义千问
+        aliases:
+          - dashscope
+          - tongyi
+          - qwen
+        api-key: ${DASHSCOPE_API_KEY:}
+        base-url: ${DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com}
+        chat-path: ${DASHSCOPE_CHAT_PATH:/compatible-mode/v1/chat/completions}
+        default-model: ${QWEN_DEFAULT_MODEL:qwen-turbo}
+        temperature: ${QWEN_TEMPERATURE:0.7}
+        max-tokens: ${QWEN_MAX_TOKENS:1200}
+        max-input-tokens: ${QWEN_MAX_INPUT_TOKENS:6000}
+        connect-timeout-ms: ${DASHSCOPE_CONNECT_TIMEOUT_MS:5000}
+        read-timeout-ms: ${DASHSCOPE_READ_TIMEOUT_MS:60000}
+        embedding:
+          enabled: ${QWEN_EMBEDDING_ENABLED:true}
+          path: ${DASHSCOPE_EMBEDDING_PATH:/compatible-mode/v1/embeddings}
+          model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v4}
+          batch-size: ${DASHSCOPE_EMBEDDING_BATCH_SIZE:10}
+          dimensions: ${DASHSCOPE_EMBEDDING_DIMENSIONS:1024}
+      deepseek:
+        enabled: ${DEEPSEEK_ENABLED:true}
+        provider: DEEPSEEK
+        display-name: DeepSeek
+        aliases:
+          - deepseek
+        api-key: ${DEEPSEEK_API_KEY:}
+        base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+        chat-path: ${DEEPSEEK_CHAT_PATH:/chat/completions}
+        default-model: ${DEEPSEEK_DEFAULT_MODEL:deepseek-chat}
+        temperature: ${DEEPSEEK_TEMPERATURE:0.7}
+        max-tokens: ${DEEPSEEK_MAX_TOKENS:1200}
+        max-input-tokens: ${DEEPSEEK_MAX_INPUT_TOKENS:6000}
+        connect-timeout-ms: ${DEEPSEEK_CONNECT_TIMEOUT_MS:5000}
+        read-timeout-ms: ${DEEPSEEK_READ_TIMEOUT_MS:60000}
+      llama3:
+        enabled: ${LLAMA3_ENABLED:true}
+        provider: OLLAMA
+        display-name: Llama 3 本地模型
+        aliases:
+          - ollama
+          - llama
+          - local
+        base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+        chat-path: ${OLLAMA_CHAT_PATH:/api/chat}
+        default-model: ${OLLAMA_MODEL:llama3.2:3b}
+        temperature: ${OLLAMA_TEMPERATURE:0.2}
+        max-tokens: ${OLLAMA_MAX_TOKENS:${OLLAMA_NUM_PREDICT:1024}}
+        max-input-tokens: ${OLLAMA_MAX_INPUT_TOKENS:${OLLAMA_NUM_CTX:4096}}
+        connect-timeout-ms: ${OLLAMA_CONNECT_TIMEOUT_MS:5000}
+        read-timeout-ms: ${OLLAMA_READ_TIMEOUT_MS:120000}
+        ollama:
+          num-predict: ${OLLAMA_NUM_PREDICT:1024}
+          num-ctx: ${OLLAMA_NUM_CTX:4096}
+          num-thread: ${OLLAMA_NUM_THREAD:}
+          keep-alive: ${OLLAMA_KEEP_ALIVE:10m}
 
 file:
   upload:

@@ -4,6 +4,7 @@ import com.qs.ai.admian.langchain4j.QwenChatModel;
 import com.qs.ai.admian.langchain4j.DeepSeekChatModel;
 import com.qs.ai.admian.langchain4j.OllamaLocalChatModel;
 import com.qs.ai.admian.langchain4j.QwenEmbeddingModel;
+import com.qs.ai.admian.service.AiModelSelectionStrategy;
 import com.qs.ai.admian.util.AiApiUtil;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
 import com.qs.ai.admian.util.OllamaChatUtil;
@@ -19,19 +20,20 @@ import org.springframework.context.annotation.Configuration;
 public class LangChain4jConfig {
 
     @Bean
-    public EmbeddingModel qwenEmbeddingModel(AiEmbeddingUtil aiEmbeddingUtil,
-                                             DashScopeProperties dashScopeProperties) {
-        return new QwenEmbeddingModel(aiEmbeddingUtil, dashScopeProperties.getEmbeddingDimensions());
+    public EmbeddingModel qwenEmbeddingModel(AiEmbeddingUtil aiEmbeddingUtil) {
+        return new QwenEmbeddingModel(aiEmbeddingUtil);
     }
 
     @Bean
-    public ChatModel qwenChatModel(AiApiUtil aiApiUtil) {
-        return new QwenChatModel(aiApiUtil);
+    public ChatModel qwenChatModel(AiApiUtil aiApiUtil,
+                                   AiModelSelectionStrategy modelSelectionStrategy) {
+        return new QwenChatModel(aiApiUtil, modelSelectionStrategy);
     }
 
     @Bean
-    public ChatModel deepSeekChatModel(AiApiUtil aiApiUtil) {
-        return new DeepSeekChatModel(aiApiUtil);
+    public ChatModel deepSeekChatModel(AiApiUtil aiApiUtil,
+                                       AiModelSelectionStrategy modelSelectionStrategy) {
+        return new DeepSeekChatModel(aiApiUtil, modelSelectionStrategy);
     }
 
     @Bean

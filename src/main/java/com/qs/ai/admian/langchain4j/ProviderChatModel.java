@@ -1,8 +1,10 @@
 package com.qs.ai.admian.langchain4j;
 
+import com.qs.ai.admian.service.AiModelSelectionStrategy;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.dto.AiChatOptions;
 import com.qs.ai.admian.service.dto.AiModelProvider;
+import com.qs.ai.admian.service.dto.SelectedAiModel;
 import com.qs.ai.admian.util.AiApiUtil;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -13,7 +15,6 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
 import lombok.RequiredArgsConstructor;
-import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -28,14 +29,19 @@ public class ProviderChatModel implements ChatModel {
     private static final int DEFAULT_MAX_INPUT_TOKENS = 4000;
 
     private final AiApiUtil aiApiUtil;
+    private final AiModelSelectionStrategy modelSelectionStrategy;
     private final AiModelProvider provider;
-    private final String defaultModel;
 
     @Override
     public ChatResponse doChat(ChatRequest request) {
-        String model = StringUtils.hasText(request.modelName()) ? request.modelName() : defaultModel;
-        Double temperature = request.temperature() == null ? DEFAULT_TEMPERATURE : request.temperature();
-        Integer maxTokens = request.maxOutputTokens() == null ? DEFAULT_MAX_TOKENS : request.maxOutputTokens();
+        SelectedAiModel selectedModel = modelSelectionStrategy.select(provider.name(), request.modelName());
+        String model = selectedModel.model();
+        Double temperature = request.temperature() == null
+                ? defaultDouble(selectedModel.temperature(), DEFAULT_TEMPERATURE)
+                : request.temperature();
+        Integer maxTokens = request.maxOutputTokens() == null
+                ? defaultInt(selectedModel.maxTokens(), DEFAULT_MAX_TOKENS)
+                : request.maxOutputTokens();
 
         AiApiChatResult result = aiApiUtil.chat(
                 provider,
@@ -44,7 +50,7 @@ public class ProviderChatModel implements ChatModel {
                         .model(model)
                         .temperature(temperature)
                         .maxTokens(maxTokens)
-                        .maxInputTokens(DEFAULT_MAX_INPUT_TOKENS)
+                        .maxInputTokens(defaultInt(selectedModel.maxInputTokens(), DEFAULT_MAX_INPUT_TOKENS))
                         .build()
         );
 
@@ -78,5 +84,13 @@ public class ProviderChatModel implements ChatModel {
                     .build();
             default -> throw new IllegalArgumentException("Unsupported LangChain4j message type: " + message.type());
         };
+    }
+
+    private Integer defaultInt(Integer value, int defaultValue) {
+        return value == null || value <= 0 ? defaultValue : value;
+    }
+
+    private Double defaultDouble(Double value, double defaultValue) {
+        return value == null ? defaultValue : value;
     }
 }

@@ -5,13 +5,14 @@ import com.qs.ai.admian.controller.response.ChatSendResponse;
 import com.qs.ai.admian.entity.AiChatRecord;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiChatRecordService;
+import com.qs.ai.admian.service.AiModelSelectionStrategy;
 import com.qs.ai.admian.service.ChatContextService;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.dto.AiChatOptions;
 import com.qs.ai.admian.service.dto.AiChatMessage;
-import com.qs.ai.admian.service.dto.AiModelProvider;
 import com.qs.ai.admian.service.dto.ChatContextMessage;
-import com.qs.ai.admian.util.AiApiUtil;
+import com.qs.ai.admian.service.dto.SelectedAiModel;
+import com.qs.ai.admian.util.MultiModelChatUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -51,13 +52,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @RequiredArgsConstructor
 public class ChatController {
 
-    private static final String DEFAULT_MODEL = "qwen-turbo";
     private static final double DEFAULT_TEMPERATURE = 0.7D;
     private static final long SSE_TIMEOUT_MS = 120_000L;
 
     private final AiChatRecordService aiChatRecordService;
     private final ChatContextService chatContextService;
-    private final AiApiUtil aiApiUtil;
+    private final MultiModelChatUtil multiModelChatUtil;
+    private final AiModelSelectionStrategy modelSelectionStrategy;
     @Qualifier("aiTaskExecutor")
     private final Executor aiTaskExecutor;
 
@@ -88,9 +89,10 @@ public class ChatController {
                                                      HttpServletRequest httpServletRequest) {
         String loginUserId = String.valueOf(httpServletRequest.getAttribute("loginUserId"));
         String conversationId = resolveConversationId(request);
-        AiModelProvider provider = resolveProvider(request);
-        String model = resolveModel(request);
-        Double temperature = resolveTemperature(request);
+        // 每个请求只解析一次模型，确保入库记录和上游调用使用同一份模型选择结果。
+        SelectedAiModel selectedModel = modelSelectionStrategy.select(request.getProvider(), request.getModel());
+        String model = selectedModel.model();
+        Double temperature = resolveTemperature(request, selectedModel);
         Long userId = Long.valueOf(loginUserId);
         List<AiChatMessage> currentMessages = resolveMessages(request);
         List<AiChatMessage> messages = buildMessagesWithContext(userId, conversationId, currentMessages);
@@ -102,14 +104,14 @@ public class ChatController {
                 () -> saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0)
         );
         try {
-            AiApiChatResult chatResult = aiApiUtil.chat(
-                    provider,
+            AiApiChatResult chatResult = multiModelChatUtil.chat(
+                    selectedModel.configKey(),
                     messages,
                     AiChatOptions.builder()
                             .model(model)
                             .temperature(temperature)
-                            .maxTokens(1024)
-                            .maxInputTokens(4000)
+                            .maxTokens(selectedModel.maxTokens())
+                            .maxInputTokens(selectedModel.maxInputTokens())
                             .build()
             );
             int latencyMs = elapsedMs(startTime);
@@ -147,9 +149,10 @@ public class ChatController {
         String loginUserId = String.valueOf(httpServletRequest.getAttribute("loginUserId"));
         Long userId = Long.valueOf(loginUserId);
         String conversationId = resolveConversationId(request);
-        AiModelProvider provider = resolveProvider(request);
-        String model = resolveModel(request);
-        Double temperature = resolveTemperature(request);
+        // 异步流式执行前先锁定模型，避免推流过程中刷新配置导致目标模型变化。
+        SelectedAiModel selectedModel = modelSelectionStrategy.select(request.getProvider(), request.getModel());
+        String model = selectedModel.model();
+        Double temperature = resolveTemperature(request, selectedModel);
         List<AiChatMessage> currentMessages = resolveMessages(request);
         List<AiChatMessage> messages = buildMessagesWithContext(userId, conversationId, currentMessages);
         AiChatMessage lastUserMessage = findLastUserMessage(currentMessages);
@@ -170,18 +173,22 @@ public class ChatController {
                     () -> saveUserMessage(conversationId, userId, lastUserMessage.getContent(), model, 0)
             );
             try {
-                AiApiChatResult result = aiApiUtil.streamChat(
-                        provider,
+                AiApiChatResult result = multiModelChatUtil.streamChat(
+                        selectedModel.configKey(),
                         messages,
                         AiChatOptions.builder()
                                 .model(model)
                                 .temperature(temperature)
-                                .maxTokens(1024)
-                                .maxInputTokens(4000)
+                                .maxTokens(selectedModel.maxTokens())
+                                .maxInputTokens(selectedModel.maxInputTokens())
                                 .build(),
                         content -> {
-                    sendCharacters(emitter, closed, content);
-                });
+                            try {
+                                sendCharacters(emitter, closed, content);
+                            } catch (IOException ex) {
+                                throw new IllegalStateException(ex);
+                            }
+                        });
                 sendEvent(emitter, closed, "done", "[DONE]");
                 completeEmitter(emitter, closed);
                 int latencyMs = elapsedMs(startTime);
@@ -255,26 +262,11 @@ public class ChatController {
                 ? request.getConversationId() : "conv-" + UUID.randomUUID().toString().replace("-", "");
     }
 
-    private String resolveModel(ChatSendRequest request) {
-        if (StringUtils.hasText(request.getModel())) {
-            return request.getModel();
+    private Double resolveTemperature(ChatSendRequest request, SelectedAiModel selectedModel) {
+        if (request.getTemperature() != null) {
+            return request.getTemperature();
         }
-        return resolveProvider(request) == AiModelProvider.DEEPSEEK ? "deepseek-chat" : DEFAULT_MODEL;
-    }
-
-    private AiModelProvider resolveProvider(ChatSendRequest request) {
-        if (StringUtils.hasText(request.getProvider())) {
-            return AiModelProvider.valueOf(request.getProvider().toUpperCase());
-        }
-        String model = request.getModel();
-        if (StringUtils.hasText(model) && model.toLowerCase().startsWith("deepseek")) {
-            return AiModelProvider.DEEPSEEK;
-        }
-        return AiModelProvider.QWEN;
-    }
-
-    private Double resolveTemperature(ChatSendRequest request) {
-        return request.getTemperature() != null ? request.getTemperature() : DEFAULT_TEMPERATURE;
+        return selectedModel.temperature() == null ? DEFAULT_TEMPERATURE : selectedModel.temperature();
     }
 
     private List<AiChatMessage> resolveMessages(ChatSendRequest request) {
