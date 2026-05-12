@@ -2,8 +2,14 @@ package com.qs.ai.admian.controller;
 
 import com.qs.ai.admian.controller.request.LangChain4jChatRequest;
 import com.qs.ai.admian.controller.request.LangChain4jEmbedRequest;
+import com.qs.ai.admian.controller.request.LangChain4jRagRequest;
 import com.qs.ai.admian.controller.response.LangChain4jChatResponse;
 import com.qs.ai.admian.controller.response.LangChain4jEmbedResponse;
+import com.qs.ai.admian.controller.response.LangChain4jRagChunkResponse;
+import com.qs.ai.admian.controller.response.LangChain4jRagResponse;
+import com.qs.ai.admian.config.RagProperties;
+import com.qs.ai.admian.langchain4j.LangChain4jRetrievalChain;
+import com.qs.ai.admian.langchain4j.MilvusRetriever;
 import com.qs.ai.admian.util.response.ApiResponse;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.message.SystemMessage;
@@ -13,6 +19,8 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.input.PromptTemplate;
+import dev.langchain4j.rag.content.Content;
+import dev.langchain4j.rag.content.ContentMetadata;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -41,6 +49,8 @@ public class LangChain4jDemoController {
 
     private final EmbeddingModel qwenEmbeddingModel;
     private final ChatModel qwenChatModel;
+    private final LangChain4jRetrievalChain langChain4jRetrievalChain;
+    private final RagProperties ragProperties;
 
     @Operation(summary = "Vectorize text using LangChain4j EmbeddingModel")
     @SecurityRequirement(name = "bearerAuth")
@@ -81,6 +91,36 @@ public class LangChain4jDemoController {
         ));
     }
 
+    @Operation(summary = "Run RetrievalChain: Milvus retrieve, PromptTemplate compose and Qwen generate")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping("/rag")
+    public ApiResponse<LangChain4jRagResponse> rag(@Valid @RequestBody LangChain4jRagRequest request) {
+        LangChain4jRetrievalChain.Options options = new LangChain4jRetrievalChain.Options(
+                request.topK(),
+                request.minScore(),
+                request.model(),
+                request.temperature(),
+                request.maxTokens()
+        );
+        LangChain4jRetrievalChain.Result result = langChain4jRetrievalChain.run(request.question(), options);
+        int topK = request.topK() == null || request.topK() <= 0 ? ragProperties.getDefaultTopK() : request.topK();
+        float minScore = request.minScore() == null || request.minScore() <= 0
+                ? ragProperties.getDefaultMinScore()
+                : request.minScore();
+        return ApiResponse.success("LangChain4j RAG chain completed", new LangChain4jRagResponse(
+                result.question(),
+                result.answer(),
+                result.chatResponse().modelName(),
+                topK,
+                minScore,
+                result.contents().size(),
+                result.contents().stream()
+                        .map(this::toChunkResponse)
+                        .toList(),
+                result.context()
+        ));
+    }
+
     private List<dev.langchain4j.data.message.ChatMessage> buildMessages(String systemPrompt, String userPrompt) {
         List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
         if (StringUtils.hasText(systemPrompt)) {
@@ -94,5 +134,26 @@ public class LangChain4jDemoController {
         return vector.stream()
                 .limit(PREVIEW_SIZE)
                 .toList();
+    }
+
+    private LangChain4jRagChunkResponse toChunkResponse(Content content) {
+        return new LangChain4jRagChunkResponse(
+                content.textSegment().metadata().getString(MilvusRetriever.META_CHUNK_ID),
+                content.textSegment().metadata().getLong(MilvusRetriever.META_FILE_ID),
+                content.textSegment().metadata().getInteger(MilvusRetriever.META_CHUNK_INDEX),
+                toFloat(content.metadata().get(ContentMetadata.SCORE)),
+                content.textSegment().metadata().getString(MilvusRetriever.META_FILE_NAME),
+                content.textSegment().metadata().getString(MilvusRetriever.META_FILE_TYPE),
+                content.textSegment().metadata().getString(MilvusRetriever.META_STORAGE_PATH),
+                content.textSegment().metadata().getString(MilvusRetriever.META_KB_CODE),
+                content.textSegment().text()
+        );
+    }
+
+    private Float toFloat(Object value) {
+        if (value instanceof Number number) {
+            return number.floatValue();
+        }
+        return null;
     }
 }
