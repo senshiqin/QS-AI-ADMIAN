@@ -8,6 +8,7 @@ import java.util.List;
 public record LangChain4jRagResponse(
         String question,
         String answer,
+        String provider,
         String model,
         Integer topK,
         Float minScore,

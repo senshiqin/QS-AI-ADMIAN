@@ -8,6 +8,7 @@ import java.util.List;
 public record RagAnswerResponse(
         String queryText,
         String answer,
+        String provider,
         String model,
         Integer hitCount,
         List<RagRetrievedChunkResponse> chunks

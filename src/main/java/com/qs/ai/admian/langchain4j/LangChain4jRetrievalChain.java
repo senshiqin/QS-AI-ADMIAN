@@ -22,7 +22,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class LangChain4jRetrievalChain {
 
-    private static final String DEFAULT_MODEL = "qwen-turbo";
+    private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
+    private static final String DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
     private static final String SYSTEM_PROMPT = """
             你是一个严格基于知识库证据回答的 RAG 助手。
             只能依据参考资料回答；如果参考资料不足，必须明确说明“当前知识库没有足够依据回答该问题”。
@@ -39,7 +40,7 @@ public class LangChain4jRetrievalChain {
             """;
 
     private final MilvusRetriever milvusRetriever;
-    private final ChatModel qwenChatModel;
+    private final Map<String, ChatModel> chatModels;
     private final RagProperties ragProperties;
 
     public Result run(String question, Options options) {
@@ -62,8 +63,21 @@ public class LangChain4jRetrievalChain {
                 .temperature(safeOptions.temperature())
                 .maxOutputTokens(safeOptions.maxTokens())
                 .build();
-        ChatResponse chatResponse = qwenChatModel.chat(chatRequest);
+        ChatResponse chatResponse = resolveChatModel(safeOptions.provider()).chat(chatRequest);
         return new Result(question, chatResponse.aiMessage().text(), contents, context, chatResponse);
+    }
+
+    private ChatModel resolveChatModel(String provider) {
+        String safeProvider = StringUtils.hasText(provider) ? provider.trim().toLowerCase() : "qwen";
+        ChatModel chatModel = switch (safeProvider) {
+            case "deepseek" -> chatModels.get("deepSeekChatModel");
+            case "qwen", "dashscope", "tongyi" -> chatModels.get("qwenChatModel");
+            default -> throw new IllegalArgumentException("Unsupported model provider: " + provider);
+        };
+        if (chatModel == null) {
+            throw new IllegalStateException("ChatModel bean not found for provider: " + safeProvider);
+        }
+        return chatModel;
     }
 
     private String buildContext(List<Content> contents) {
@@ -98,6 +112,7 @@ public class LangChain4jRetrievalChain {
     }
 
     public record Options(
+            String provider,
             Integer topK,
             Float minScore,
             String model,
@@ -107,9 +122,10 @@ public class LangChain4jRetrievalChain {
 
         private static Options defaults(RagProperties properties) {
             return new Options(
+                    "qwen",
                     properties.getDefaultTopK(),
                     properties.getDefaultMinScore(),
-                    DEFAULT_MODEL,
+                    DEFAULT_QWEN_MODEL,
                     properties.getAnswerTemperature(),
                     properties.getAnswerMaxTokens()
             );
@@ -118,12 +134,17 @@ public class LangChain4jRetrievalChain {
         private Options withDefaults(RagProperties properties) {
             Options defaults = defaults(properties);
             return new Options(
+                    StringUtils.hasText(provider) ? provider : defaults.provider(),
                     topK == null || topK <= 0 ? defaults.topK() : topK,
                     minScore == null || minScore <= 0 ? defaults.minScore() : minScore,
-                    StringUtils.hasText(model) ? model : defaults.model(),
+                    StringUtils.hasText(model) ? model : defaultModelByProvider(StringUtils.hasText(provider) ? provider : defaults.provider()),
                     temperature == null ? defaults.temperature() : temperature,
                     maxTokens == null || maxTokens <= 0 ? defaults.maxTokens() : maxTokens
             );
+        }
+
+        private String defaultModelByProvider(String provider) {
+            return "deepseek".equalsIgnoreCase(provider) ? DEFAULT_DEEPSEEK_MODEL : DEFAULT_QWEN_MODEL;
         }
     }
 

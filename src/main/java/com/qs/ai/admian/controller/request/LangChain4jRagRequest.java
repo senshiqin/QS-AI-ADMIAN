@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 public record LangChain4jRagRequest(
         @NotBlank(message = "question must not be blank")
         String question,
+        String provider,
         Integer topK,
         Float minScore,
         String model,

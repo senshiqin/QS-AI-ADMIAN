@@ -96,6 +96,7 @@ public class LangChain4jDemoController {
     @PostMapping("/rag")
     public ApiResponse<LangChain4jRagResponse> rag(@Valid @RequestBody LangChain4jRagRequest request) {
         LangChain4jRetrievalChain.Options options = new LangChain4jRetrievalChain.Options(
+                request.provider(),
                 request.topK(),
                 request.minScore(),
                 request.model(),
@@ -110,6 +111,7 @@ public class LangChain4jDemoController {
         return ApiResponse.success("LangChain4j RAG chain completed", new LangChain4jRagResponse(
                 result.question(),
                 result.answer(),
+                resolveProvider(request.provider()),
                 result.chatResponse().modelName(),
                 topK,
                 minScore,
@@ -155,5 +157,9 @@ public class LangChain4jDemoController {
             return number.floatValue();
         }
         return null;
+    }
+
+    private String resolveProvider(String provider) {
+        return provider == null || provider.isBlank() ? "qwen" : provider.trim().toLowerCase();
     }
 }

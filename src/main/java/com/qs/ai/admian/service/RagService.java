@@ -19,6 +19,7 @@ public interface RagService {
     RagRetrieveResponse retrieve(String queryText, Integer topK, Float minScore);
 
     AiApiChatResult streamAnswer(RagRetrieveResponse retrieval,
+                                 String provider,
                                  String model,
                                  Double temperature,
                                  java.util.function.Consumer<String> contentConsumer);

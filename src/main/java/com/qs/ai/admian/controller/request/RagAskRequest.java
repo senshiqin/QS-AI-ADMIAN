@@ -10,6 +10,7 @@ public record RagAskRequest(
         String queryText,
         Integer topK,
         Float minScore,
+        String provider,
         String model,
         Double temperature
 ) {

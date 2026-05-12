@@ -10,6 +10,7 @@ import com.qs.ai.admian.controller.response.RagRetrieveResponse;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.FileUploadService;
 import com.qs.ai.admian.service.RagService;
+import com.qs.ai.admian.util.MultiModelChatUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -43,11 +44,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 public class RagController {
 
     private static final long SSE_TIMEOUT_MS = 120_000L;
-    private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
 
     private final FileUploadService fileUploadService;
     private final RagService ragService;
     private final ObjectMapper objectMapper;
+    private final MultiModelChatUtil multiModelChatUtil;
     @Qualifier("aiTaskExecutor")
     private final Executor aiTaskExecutor;
 
@@ -103,6 +104,7 @@ public class RagController {
 
                 AiApiChatResult result = ragService.streamAnswer(
                         retrieval,
+                        request.provider(),
                         request.model(),
                         request.temperature(),
                         content -> sendEvent(emitter, closed, "message", content)
@@ -110,7 +112,10 @@ public class RagController {
                 RagAnswerResponse answerResponse = new RagAnswerResponse(
                         retrieval.queryText(),
                         result.answer(),
-                        request.model() == null || request.model().isBlank() ? DEFAULT_QWEN_MODEL : request.model(),
+                        resolveProvider(request.provider()),
+                        request.model() == null || request.model().isBlank()
+                                ? multiModelChatUtil.defaultModel(request.provider())
+                                : request.model(),
                         retrieval.hitCount(),
                         retrieval.chunks()
                 );
@@ -132,6 +137,10 @@ public class RagController {
             return 0L;
         }
         return Long.valueOf(String.valueOf(loginUserId));
+    }
+
+    private String resolveProvider(String provider) {
+        return provider == null || provider.isBlank() ? "qwen" : provider.trim().toLowerCase();
     }
 
     private void sendEvent(SseEmitter emitter, AtomicBoolean closed, String eventName, Object data) {

@@ -13,12 +13,11 @@ import com.qs.ai.admian.service.RagService;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.dto.AiChatMessage;
 import com.qs.ai.admian.service.dto.AiChatOptions;
-import com.qs.ai.admian.service.dto.AiModelProvider;
 import com.qs.ai.admian.service.dto.MilvusSearchResult;
 import com.qs.ai.admian.service.dto.TextChunk;
-import com.qs.ai.admian.util.AiApiUtil;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
 import com.qs.ai.admian.util.MilvusVectorUtil;
+import com.qs.ai.admian.util.MultiModelChatUtil;
 import com.qs.ai.admian.util.TextChunkUtil;
 import com.qs.ai.admian.util.TextParseUtil;
 import lombok.RequiredArgsConstructor;
@@ -51,12 +50,10 @@ import java.util.stream.Collectors;
 public class RagServiceImpl implements RagService {
 
     private static final String DEFAULT_KB_CODE = "default";
-    private static final String DEFAULT_QWEN_MODEL = "qwen-turbo";
-
     private final AiKnowledgeFileService aiKnowledgeFileService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
     private final MilvusVectorUtil milvusVectorUtil;
-    private final AiApiUtil aiApiUtil;
+    private final MultiModelChatUtil multiModelChatUtil;
     private final RagProperties ragProperties;
 
     @Override
@@ -158,13 +155,14 @@ public class RagServiceImpl implements RagService {
 
     @Override
     public AiApiChatResult streamAnswer(RagRetrieveResponse retrieval,
+                                        String provider,
                                         String model,
                                         Double temperature,
                                         java.util.function.Consumer<String> contentConsumer) {
         if (retrieval == null) {
             throw new ParamException("retrieval result must not be null");
         }
-        String safeModel = StringUtils.hasText(model) ? model : DEFAULT_QWEN_MODEL;
+        String safeModel = StringUtils.hasText(model) ? model : multiModelChatUtil.defaultModel(provider);
         Double safeTemperature = temperature == null ? resolveAnswerTemperature() : temperature;
         List<AiChatMessage> messages = List.of(
                 AiChatMessage.builder()
@@ -177,8 +175,8 @@ public class RagServiceImpl implements RagService {
                         .build()
         );
 
-        return aiApiUtil.streamChat(
-                AiModelProvider.QWEN,
+        return multiModelChatUtil.streamChat(
+                provider,
                 messages,
                 AiChatOptions.builder()
                         .model(safeModel)
