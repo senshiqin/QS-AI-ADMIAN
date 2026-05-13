@@ -3,12 +3,15 @@ package com.qs.ai.admian.controller;
 import com.qs.ai.admian.controller.request.LangChain4jChatRequest;
 import com.qs.ai.admian.controller.request.LangChain4jEmbedRequest;
 import com.qs.ai.admian.controller.request.LangChain4jRagRequest;
+import com.qs.ai.admian.controller.request.LangChain4jSequentialRagRequest;
 import com.qs.ai.admian.controller.response.LangChain4jChatResponse;
 import com.qs.ai.admian.controller.response.LangChain4jEmbedResponse;
 import com.qs.ai.admian.controller.response.LangChain4jRagChunkResponse;
 import com.qs.ai.admian.controller.response.LangChain4jRagResponse;
+import com.qs.ai.admian.controller.response.LangChain4jSequentialRagResponse;
 import com.qs.ai.admian.config.RagProperties;
 import com.qs.ai.admian.langchain4j.LangChain4jRetrievalChain;
+import com.qs.ai.admian.langchain4j.LangChain4jSequentialChain;
 import com.qs.ai.admian.langchain4j.MilvusRetriever;
 import com.qs.ai.admian.util.response.ApiResponse;
 import dev.langchain4j.data.embedding.Embedding;
@@ -35,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * LangChain4j demo APIs.
@@ -50,6 +54,7 @@ public class LangChain4jDemoController {
     private final EmbeddingModel qwenEmbeddingModel;
     private final ChatModel qwenChatModel;
     private final LangChain4jRetrievalChain langChain4jRetrievalChain;
+    private final LangChain4jSequentialChain langChain4jSequentialChain;
     private final RagProperties ragProperties;
 
     @Operation(summary = "Vectorize text using LangChain4j EmbeddingModel")
@@ -123,6 +128,53 @@ public class LangChain4jDemoController {
         ));
     }
 
+    @Operation(summary = "Run SequentialChain: retrieve, summarize context, answer with memory")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping("/sequential-rag")
+    public ApiResponse<LangChain4jSequentialRagResponse> sequentialRag(
+            @Valid @RequestBody LangChain4jSequentialRagRequest request,
+            jakarta.servlet.http.HttpServletRequest httpServletRequest) {
+        String conversationId = StringUtils.hasText(request.conversationId())
+                ? request.conversationId()
+                : "seq-" + UUID.randomUUID().toString().replace("-", "");
+        LangChain4jSequentialChain.Options options = new LangChain4jSequentialChain.Options(
+                resolveLoginUserId(httpServletRequest),
+                conversationId,
+                request.question(),
+                request.provider(),
+                request.model(),
+                request.temperature(),
+                request.topK(),
+                request.minScore(),
+                request.maxInputTokens(),
+                request.maxMemoryTokens(),
+                request.maxContextTokens(),
+                request.summaryMaxTokens(),
+                request.answerMaxTokens(),
+                request.saveMemory()
+        );
+        LangChain4jSequentialChain.Result result = langChain4jSequentialChain.run(options);
+        return ApiResponse.success("LangChain4j SequentialChain completed", new LangChain4jSequentialRagResponse(
+                result.conversationId(),
+                result.question(),
+                result.answer(),
+                result.provider(),
+                result.model(),
+                result.topK(),
+                result.minScore(),
+                result.contents().size(),
+                result.estimatedInputTokens(),
+                result.memoryTokens(),
+                result.contextTokens(),
+                result.summaryTokens(),
+                result.memoryContext(),
+                result.retrievedContextSummary(),
+                result.contents().stream()
+                        .map(this::toChunkResponse)
+                        .toList()
+        ));
+    }
+
     private List<dev.langchain4j.data.message.ChatMessage> buildMessages(String systemPrompt, String userPrompt) {
         List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
         if (StringUtils.hasText(systemPrompt)) {
@@ -161,5 +213,13 @@ public class LangChain4jDemoController {
 
     private String resolveProvider(String provider) {
         return provider == null || provider.isBlank() ? "qwen" : provider.trim().toLowerCase();
+    }
+
+    private Long resolveLoginUserId(jakarta.servlet.http.HttpServletRequest request) {
+        Object loginUserId = request.getAttribute("loginUserId");
+        if (loginUserId == null) {
+            return 0L;
+        }
+        return Long.valueOf(String.valueOf(loginUserId));
     }
 }
