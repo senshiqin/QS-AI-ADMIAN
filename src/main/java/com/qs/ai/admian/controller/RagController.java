@@ -76,6 +76,30 @@ public class RagController {
         return ApiResponse.success("RAG file ingested", response);
     }
 
+    @Operation(summary = "Upload file and asynchronously parse, embed and store vectors into Milvus")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping(value = "/ingest/async", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<RagIngestResponse> ingestAsync(
+            @Parameter(description = "File to ingest asynchronously, allowed extensions: pdf/docx/txt/md")
+            @RequestParam("file") MultipartFile file,
+            @Parameter(description = "Knowledge base code, default is default")
+            @RequestParam(value = "kbCode", required = false, defaultValue = "default") String kbCode,
+            @Parameter(description = "Chunk size, default 800")
+            @RequestParam(value = "chunkSize", required = false, defaultValue = "800") Integer chunkSize,
+            @Parameter(description = "Overlap ratio, default 0.1")
+            @RequestParam(value = "overlapRatio", required = false, defaultValue = "0.1") Double overlapRatio,
+            HttpServletRequest request) {
+        FileUploadResponse uploadResponse = fileUploadService.uploadSingle(file);
+        RagIngestResponse response = ragService.submitIngestFileAsync(
+                uploadResponse,
+                kbCode,
+                resolveLoginUserId(request),
+                chunkSize,
+                overlapRatio
+        );
+        return ApiResponse.success("RAG file ingest task submitted", response);
+    }
+
     @Operation(summary = "Embed query text and retrieve Top5 similar chunks from Milvus")
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/retrieve")

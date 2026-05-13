@@ -51,7 +51,12 @@ milvus:
   dimension: ${MILVUS_DIMENSION:${dashscope.embedding-dimensions}}
   auto-create-collection: ${MILVUS_AUTO_CREATE_COLLECTION:false}
   metric-type: ${MILVUS_METRIC_TYPE:COSINE}
-  index-type: ${MILVUS_INDEX_TYPE:AUTOINDEX}
+  index-type: ${MILVUS_INDEX_TYPE:IVF_FLAT}
+  index-nlist: ${MILVUS_INDEX_NLIST:1024}
+  search-nprobe: ${MILVUS_SEARCH_NPROBE:16}
+  hnsw-m: ${MILVUS_HNSW_M:16}
+  hnsw-ef-construction: ${MILVUS_HNSW_EF_CONSTRUCTION:200}
+  hnsw-ef: ${MILVUS_HNSW_EF:64}
   content-max-length: ${MILVUS_CONTENT_MAX_LENGTH:8192}
   similarity-threshold: ${MILVUS_SIMILARITY_THRESHOLD:0.55}
   connect-timeout-ms: ${MILVUS_CONNECT_TIMEOUT_MS:5000}

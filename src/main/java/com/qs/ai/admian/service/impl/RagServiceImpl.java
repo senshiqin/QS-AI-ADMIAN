@@ -1,6 +1,7 @@
 package com.qs.ai.admian.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qs.ai.admian.config.RagProperties;
 import com.qs.ai.admian.controller.response.FileUploadResponse;
 import com.qs.ai.admian.controller.response.RagIngestResponse;
@@ -9,6 +10,7 @@ import com.qs.ai.admian.controller.response.RagRetrievedChunkResponse;
 import com.qs.ai.admian.entity.AiKnowledgeFile;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiKnowledgeFileService;
+import com.qs.ai.admian.service.RagIngestAsyncTask;
 import com.qs.ai.admian.service.RagService;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.dto.AiChatMessage;
@@ -18,10 +20,12 @@ import com.qs.ai.admian.service.dto.TextChunk;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
 import com.qs.ai.admian.util.MilvusVectorUtil;
 import com.qs.ai.admian.util.MultiModelChatUtil;
+import com.qs.ai.admian.util.RedisUtil;
 import com.qs.ai.admian.util.TextChunkUtil;
 import com.qs.ai.admian.util.TextParseUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -39,6 +43,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -50,11 +56,16 @@ import java.util.stream.Collectors;
 public class RagServiceImpl implements RagService {
 
     private static final String DEFAULT_KB_CODE = "default";
+    private static final String RAG_RETRIEVE_CACHE_PREFIX = "ai:rag:retrieve:";
+    private static final long RAG_RETRIEVE_CACHE_TTL_MINUTES = 10L;
     private final AiKnowledgeFileService aiKnowledgeFileService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
     private final MilvusVectorUtil milvusVectorUtil;
     private final MultiModelChatUtil multiModelChatUtil;
     private final RagProperties ragProperties;
+    private final RagIngestAsyncTask ragIngestAsyncTask;
+    private final RedisUtil redisUtil;
+    private final ObjectMapper objectMapper;
 
     @Override
     public RagIngestResponse ingestFile(FileUploadResponse file,
@@ -122,6 +133,58 @@ public class RagServiceImpl implements RagService {
     }
 
     @Override
+    public RagIngestResponse submitIngestFileAsync(FileUploadResponse file,
+                                                   String kbCode,
+                                                   Long uploaderUserId,
+                                                   Integer chunkSize,
+                                                   Double overlapRatio) {
+        if (file == null) {
+            throw new ParamException("uploaded file metadata must not be null");
+        }
+        String safeKbCode = StringUtils.hasText(kbCode) ? kbCode : DEFAULT_KB_CODE;
+        Long safeUploaderUserId = uploaderUserId == null ? 0L : uploaderUserId;
+        int safeChunkSize = chunkSize == null || chunkSize <= 0 ? resolveDefaultChunkSize() : chunkSize;
+        double safeOverlapRatio = overlapRatio == null || overlapRatio < 0
+                ? resolveDefaultOverlapRatio()
+                : overlapRatio;
+
+        AiKnowledgeFile knowledgeFile = saveParsingFile(file, safeKbCode, safeUploaderUserId);
+        ragIngestAsyncTask.ingest(file, knowledgeFile.getId(), safeChunkSize, safeOverlapRatio)
+                .exceptionally(ex -> {
+                    log.error("RAG async ingest future completed exceptionally, fileId={}",
+                            knowledgeFile.getId(), ex);
+                    return null;
+                });
+        return new RagIngestResponse(
+                knowledgeFile.getId(),
+                knowledgeFile.getKbCode(),
+                knowledgeFile.getFileName(),
+                knowledgeFile.getFileType(),
+                knowledgeFile.getStoragePath(),
+                0,
+                0,
+                aiEmbeddingUtil.getEmbeddingModel(),
+                milvusVectorUtil.getEmbeddingDimension(),
+                0L,
+                knowledgeFile.getParseStatus()
+        );
+    }
+
+    @Async("aiTaskExecutor")
+    @Override
+    public CompletableFuture<RagIngestResponse> ingestFileAsync(FileUploadResponse file,
+                                                                String kbCode,
+                                                                Long uploaderUserId,
+                                                                Integer chunkSize,
+                                                                Double overlapRatio) {
+        try {
+            return CompletableFuture.completedFuture(ingestFile(file, kbCode, uploaderUserId, chunkSize, overlapRatio));
+        } catch (Exception ex) {
+            return CompletableFuture.failedFuture(ex);
+        }
+    }
+
+    @Override
     public RagRetrieveResponse retrieve(String queryText, Integer topK, Float minScore) {
         String cleanQuery = TextParseUtil.cleanText(queryText);
         if (!StringUtils.hasText(cleanQuery)) {
@@ -130,6 +193,13 @@ public class RagServiceImpl implements RagService {
 
         int safeTopK = topK == null || topK <= 0 ? resolveDefaultTopK() : topK;
         float safeMinScore = minScore == null || minScore <= 0 ? resolveDefaultMinScore() : minScore;
+        String cacheKey = buildRetrieveCacheKey(cleanQuery, safeTopK, safeMinScore);
+        RagRetrieveResponse cached = getCachedRetrieve(cacheKey);
+        if (cached != null) {
+            log.debug("RAG retrieve cache hit, key={}", cacheKey);
+            return cached;
+        }
+
         int candidateTopK = safeTopK * resolveCandidateMultiplier();
         float[] queryVector = aiEmbeddingUtil.embed(cleanQuery);
         List<MilvusSearchResult> searchResults = refineSearchResults(
@@ -141,7 +211,7 @@ public class RagServiceImpl implements RagService {
                 .map(result -> toChunkResponse(result, fileMap.get(result.fileId())))
                 .toList();
 
-        return new RagRetrieveResponse(
+        RagRetrieveResponse response = new RagRetrieveResponse(
                 cleanQuery,
                 safeTopK,
                 safeMinScore,
@@ -151,6 +221,8 @@ public class RagServiceImpl implements RagService {
                 chunks,
                 buildRagContext(chunks)
         );
+        cacheRetrieve(cacheKey, response);
+        return response;
     }
 
     @Override
@@ -348,6 +420,57 @@ public class RagServiceImpl implements RagService {
         } catch (Exception ex) {
             log.error("Failed to calculate file hash, storagePath={}", storagePath, ex);
             throw new ParamException("failed to calculate file hash");
+        }
+    }
+
+    private String buildRetrieveCacheKey(String cleanQuery, int topK, float minScore) {
+        String source = aiEmbeddingUtil.getEmbeddingModel()
+                + ":"
+                + milvusVectorUtil.getEmbeddingDimension()
+                + ":"
+                + topK
+                + ":"
+                + minScore
+                + ":"
+                + cleanQuery;
+        return RAG_RETRIEVE_CACHE_PREFIX + sha256(source);
+    }
+
+    private RagRetrieveResponse getCachedRetrieve(String cacheKey) {
+        try {
+            Object cached = redisUtil.get(cacheKey);
+            if (cached == null) {
+                return null;
+            }
+            if (cached instanceof String json) {
+                return objectMapper.readValue(json, RagRetrieveResponse.class);
+            }
+            return objectMapper.convertValue(cached, RagRetrieveResponse.class);
+        } catch (Exception ex) {
+            log.debug("Failed to read RAG retrieve cache, key={}", cacheKey, ex);
+            return null;
+        }
+    }
+
+    private void cacheRetrieve(String cacheKey, RagRetrieveResponse response) {
+        try {
+            redisUtil.set(
+                    cacheKey,
+                    objectMapper.writeValueAsString(response),
+                    RAG_RETRIEVE_CACHE_TTL_MINUTES,
+                    TimeUnit.MINUTES
+            );
+        } catch (Exception ex) {
+            log.debug("Failed to write RAG retrieve cache, key={}", cacheKey, ex);
+        }
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("failed to calculate cache key", ex);
         }
     }
 

@@ -2,8 +2,10 @@ package com.qs.ai.admian.config;
 
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.dto.AiModelProvider;
+import com.qs.ai.admian.util.RedisUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -17,19 +19,24 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Thread-safe holder for the active model configuration.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class AiModelConfigRegistry {
 
+    private static final String MODEL_CONFIG_CACHE_KEY = "ai:model-config:current";
+    private static final long MODEL_CONFIG_CACHE_TTL_MINUTES = 30L;
     private static final String QWEN_KEY = "qwen";
     private static final String DEEPSEEK_KEY = "deepseek";
     private static final String LLAMA3_KEY = "llama3";
 
     private final AiModelsProperties initialProperties;
+    private final RedisUtil redisUtil;
     private final AtomicReference<AiModelsProperties> currentProperties = new AtomicReference<>();
     private final AtomicLong version = new AtomicLong();
     private volatile LocalDateTime refreshedAt;
@@ -45,7 +52,9 @@ public class AiModelConfigRegistry {
         currentProperties.set(normalized);
         refreshedAt = LocalDateTime.now();
         version.incrementAndGet();
-        return currentState();
+        AiModelConfigState state = currentState();
+        cacheCurrentState(state);
+        return state;
     }
 
     public AiModelConfigState currentState() {
@@ -56,6 +65,16 @@ public class AiModelConfigRegistry {
                 properties.getSelection(),
                 properties.getProviders()
         );
+    }
+
+    public AiModelConfigState cachedCurrentState() {
+        try {
+            AiModelConfigState cached = redisUtil.get(MODEL_CONFIG_CACHE_KEY, AiModelConfigState.class);
+            return cached == null ? currentState() : cached;
+        } catch (Exception ex) {
+            log.debug("Failed to read AI model config cache", ex);
+            return currentState();
+        }
     }
 
     public AiModelsProperties current() {
@@ -109,6 +128,14 @@ public class AiModelConfigRegistry {
                 .sorted(Comparator.comparingInt((Map.Entry<String, AiModelsProperties.Model> entry) ->
                         entry.getKey().length()).reversed())
                 .toList();
+    }
+
+    private void cacheCurrentState(AiModelConfigState state) {
+        try {
+            redisUtil.set(MODEL_CONFIG_CACHE_KEY, state, MODEL_CONFIG_CACHE_TTL_MINUTES, TimeUnit.MINUTES);
+        } catch (Exception ex) {
+            log.debug("Failed to write AI model config cache", ex);
+        }
     }
 
     private boolean matchesProvider(String key, AiModelsProperties.Model model, String requested) {

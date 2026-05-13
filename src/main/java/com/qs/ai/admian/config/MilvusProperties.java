@@ -24,7 +24,17 @@ public class MilvusProperties {
 
     private String metricType = "COSINE";
 
-    private String indexType = "AUTOINDEX";
+    private String indexType = "IVF_FLAT";
+
+    private Integer indexNlist = 1024;
+
+    private Integer searchNprobe = 16;
+
+    private Integer hnswM;
+
+    private Integer hnswEfConstruction;
+
+    private Integer hnswEf;
 
     private Integer contentMaxLength = 8192;
 

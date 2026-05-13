@@ -34,7 +34,7 @@ public class AiModelConfigController {
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping
     public ApiResponse<AiModelConfigResponse> current() {
-        return ApiResponse.success(toResponse(registry.currentState()));
+        return ApiResponse.success(toResponse(registry.cachedCurrentState()));
     }
 
     @Operation(summary = "Refresh AI model configuration without restarting")

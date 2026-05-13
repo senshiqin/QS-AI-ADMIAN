@@ -34,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -119,6 +120,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
                             .indexName(VECTOR_FIELD + "_idx")
                             .indexType(resolveIndexType())
                             .metricType(resolveMetricType())
+                            .extraParams(resolveIndexParams())
                             .build()))
                     .sync(true)
                     .build());
@@ -182,6 +184,7 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
                     .topK(safeTopK)
                     .data(List.of(new FloatVec(queryVector)))
                     .outputFields(List.of(CHUNK_ID_FIELD, FILE_ID_FIELD, CHUNK_INDEX_FIELD, CONTENT_FIELD))
+                    .searchParams(resolveSearchParams())
                     .build());
 
             if (response.getSearchResults() == null || response.getSearchResults().isEmpty()) {
@@ -382,6 +385,37 @@ public class MilvusVectorServiceImpl implements MilvusVectorService {
         } catch (Exception ex) {
             throw new ParamException("unsupported Milvus indexType: " + milvusProperties.getIndexType());
         }
+    }
+
+    private Map<String, Object> resolveIndexParams() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        String indexType = milvusProperties.getIndexType() == null
+                ? ""
+                : milvusProperties.getIndexType().toUpperCase();
+        if (indexType.startsWith("IVF")) {
+            params.put("nlist", positiveOrDefault(milvusProperties.getIndexNlist(), 1024));
+        } else if (indexType.startsWith("HNSW")) {
+            params.put("M", positiveOrDefault(milvusProperties.getHnswM(), 16));
+            params.put("efConstruction", positiveOrDefault(milvusProperties.getHnswEfConstruction(), 200));
+        }
+        return params;
+    }
+
+    private Map<String, Object> resolveSearchParams() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        String indexType = milvusProperties.getIndexType() == null
+                ? ""
+                : milvusProperties.getIndexType().toUpperCase();
+        if (indexType.startsWith("IVF")) {
+            params.put("nprobe", positiveOrDefault(milvusProperties.getSearchNprobe(), 16));
+        } else if (indexType.startsWith("HNSW")) {
+            params.put("ef", positiveOrDefault(milvusProperties.getHnswEf(), 64));
+        }
+        return params;
+    }
+
+    private int positiveOrDefault(Integer value, int defaultValue) {
+        return value == null || value <= 0 ? defaultValue : value;
     }
 
     private MilvusVectorException toMilvusException(String operation, Exception ex) {
