@@ -172,6 +172,16 @@ file:
   upload:
     base-dir: ${FILE_UPLOAD_BASE_DIR:uploads/files}
 
+maintenance:
+  cleanup:
+    enabled: ${MAINTENANCE_CLEANUP_ENABLED:true}
+    temp-dir: ${MAINTENANCE_TEMP_DIR:uploads/temp}
+    expired-hours: ${MAINTENANCE_TEMP_EXPIRED_HOURS:24}
+    cron: ${MAINTENANCE_CLEANUP_CRON:0 0 3 * * ?}
+  cache-warmup:
+    enabled: ${MAINTENANCE_CACHE_WARMUP_ENABLED:true}
+    cron: ${MAINTENANCE_CACHE_WARMUP_CRON:0 */10 * * * ?}
+
 logging:
   level:
     org.springframework.boot.autoconfigure: INFO

@@ -4,7 +4,7 @@
     <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="qs-ai-admian"/>
     <property name="LOG_HOME" value="logs/${APP_NAME}"/>
     <property name="LOG_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-no-trace}] %-5level %logger{50} - %msg%n"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -52,9 +52,72 @@
         </rollingPolicy>
     </appender>
 
+    <appender name="AI_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/ai/current.log</file>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/ai/%d{yyyy-MM-dd}/ai.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="RAG_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/rag/current.log</file>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/rag/%d{yyyy-MM-dd}/rag.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <appender name="SCHEDULE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/schedule/current.log</file>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/schedule/%d{yyyy-MM-dd}/schedule.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>30MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>3GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
     <logger name="com.qs.ai.admian.controller" level="INFO"/>
     <logger name="com.qs.ai.admian.config.interceptor" level="INFO"/>
     <logger name="com.qs.ai.admian.config.GlobalExceptionHandler" level="ERROR"/>
+    <logger name="com.qs.ai.admian.util.AiApiUtil" level="INFO" additivity="true">
+        <appender-ref ref="AI_FILE"/>
+    </logger>
+    <logger name="com.qs.ai.admian.util.MultiModelChatUtil" level="INFO" additivity="true">
+        <appender-ref ref="AI_FILE"/>
+    </logger>
+    <logger name="com.qs.ai.admian.util.OllamaChatUtil" level="INFO" additivity="true">
+        <appender-ref ref="AI_FILE"/>
+    </logger>
+    <logger name="com.qs.ai.admian.langchain4j" level="INFO" additivity="true">
+        <appender-ref ref="RAG_FILE"/>
+    </logger>
+    <logger name="com.qs.ai.admian.service.impl.RagServiceImpl" level="INFO" additivity="true">
+        <appender-ref ref="RAG_FILE"/>
+    </logger>
+    <logger name="com.qs.ai.admian.service.RagIngestAsyncTask" level="INFO" additivity="true">
+        <appender-ref ref="RAG_FILE"/>
+    </logger>
+    <logger name="com.qs.ai.admian.service.MaintenanceTaskService" level="INFO" additivity="true">
+        <appender-ref ref="SCHEDULE_FILE"/>
+    </logger>
 
     <springProfile name="dev">
         <root level="DEBUG">

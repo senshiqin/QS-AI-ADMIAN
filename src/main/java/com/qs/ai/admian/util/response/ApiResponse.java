@@ -4,6 +4,9 @@ import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.slf4j.MDC;
+
+import java.time.LocalDateTime;
 
 /**
  * Unified response body.
@@ -18,36 +21,42 @@ public class ApiResponse<T> {
     private int code;
     private String message;
     private T data;
+    private String traceId;
+    private LocalDateTime timestamp;
 
     public static <T> ApiResponse<T> success() {
-        return new ApiResponse<>(ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage(), null);
+        return of(ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage(), null);
     }
 
     public static <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage(), data);
+        return of(ResultCode.SUCCESS.getCode(), ResultCode.SUCCESS.getMessage(), data);
     }
 
     public static <T> ApiResponse<T> success(String message, T data) {
-        return new ApiResponse<>(ResultCode.SUCCESS.getCode(), message, data);
+        return of(ResultCode.SUCCESS.getCode(), message, data);
     }
 
     public static <T> ApiResponse<T> fail() {
-        return new ApiResponse<>(ResultCode.INTERNAL_ERROR.getCode(), ResultCode.INTERNAL_ERROR.getMessage(), null);
+        return of(ResultCode.INTERNAL_ERROR.getCode(), ResultCode.INTERNAL_ERROR.getMessage(), null);
     }
 
     public static <T> ApiResponse<T> fail(String message) {
-        return new ApiResponse<>(ResultCode.INTERNAL_ERROR.getCode(), message, null);
+        return of(ResultCode.INTERNAL_ERROR.getCode(), message, null);
     }
 
     public static <T> ApiResponse<T> fail(int code, String message) {
-        return new ApiResponse<>(code, message, null);
+        return of(code, message, null);
     }
 
     public static <T> ApiResponse<T> fail(ResultCode resultCode) {
-        return new ApiResponse<>(resultCode.getCode(), resultCode.getMessage(), null);
+        return of(resultCode.getCode(), resultCode.getMessage(), null);
     }
 
     public static <T> ApiResponse<T> fail(int code, String message, T data) {
-        return new ApiResponse<>(code, message, data);
+        return of(code, message, data);
+    }
+
+    private static <T> ApiResponse<T> of(int code, String message, T data) {
+        return new ApiResponse<>(code, message, data, MDC.get("traceId"), LocalDateTime.now());
     }
 }

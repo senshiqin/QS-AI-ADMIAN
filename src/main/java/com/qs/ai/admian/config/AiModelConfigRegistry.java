@@ -77,6 +77,10 @@ public class AiModelConfigRegistry {
         }
     }
 
+    public void warmupCache() {
+        cacheCurrentState(currentState());
+    }
+
     public AiModelsProperties current() {
         AiModelsProperties properties = currentProperties.get();
         return properties == null ? normalize(new AiModelsProperties()) : properties;

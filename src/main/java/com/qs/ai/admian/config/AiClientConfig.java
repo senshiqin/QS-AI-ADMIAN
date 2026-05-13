@@ -14,7 +14,8 @@ import org.springframework.web.client.RestClient;
         DashScopeProperties.class,
         DeepSeekProperties.class,
         OllamaProperties.class,
-        AiModelsProperties.class
+        AiModelsProperties.class,
+        MaintenanceProperties.class
 })
 public class AiClientConfig {
 
