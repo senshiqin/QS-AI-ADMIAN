@@ -7,6 +7,8 @@ target/
 
 #sql
 *.sql
+*.txt
+*.md
 
 # Keep Maven Wrapper binary
 !.mvn/wrapper/maven-wrapper.jar
