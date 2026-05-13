@@ -24,7 +24,19 @@ public class OpenApiConfig {
                                 .bearerFormat("JWT")))
                 .info(new Info()
                         .title("QS-AI Backend API")
-                        .description("Spring Boot 3.2.5 AI backend interface documentation")
+                        .description("""
+                                Spring Boot 3.2.5 / JDK 17 AI backend interface documentation.
+
+                                Main modules:
+                                - Auth: JWT login.
+                                - AI Chat: multi-model chat and SSE streaming.
+                                - AI RAG: retrieval, streaming answer and async ingestion.
+                                - AI Documents: knowledge document query, delete and batch upload.
+                                - AI Model Config: runtime model configuration and refresh.
+
+                                All protected /api/v1/ai/** APIs require Bearer JWT authorization.
+                                Responses use ApiResponse with code, message, data, traceId and timestamp.
+                                """)
                         .version("v1.0.0")
                         .contact(new Contact().name("QS-AI Team")));
     }
