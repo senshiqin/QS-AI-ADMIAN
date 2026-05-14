@@ -11,6 +11,8 @@ spring:
     init:
       mode: always
       schema-locations: classpath:schema-h2.sql
+  flyway:
+    enabled: false
 
 logging:
   level:

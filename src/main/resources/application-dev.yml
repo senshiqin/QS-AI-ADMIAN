@@ -13,10 +13,6 @@ spring:
       maximum-pool-size: 20
       connection-timeout: 30000
       validation-timeout: 5000
-  sql:
-    init:
-      mode: always
-      schema-locations: classpath:schema.sql
   data:
     redis:
       host: ${REDIS_HOST:localhost}

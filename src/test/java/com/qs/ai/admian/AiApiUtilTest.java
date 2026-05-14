@@ -1,8 +1,8 @@
 package com.qs.ai.admian;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.qs.ai.admian.config.DashScopeProperties;
-import com.qs.ai.admian.config.DeepSeekProperties;
+import com.qs.ai.admian.config.AiModelConfigRegistry;
+import com.qs.ai.admian.config.AiModelsProperties;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.service.AiApiService;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
@@ -11,6 +11,7 @@ import com.qs.ai.admian.service.dto.AiChatOptions;
 import com.qs.ai.admian.service.dto.AiModelProvider;
 import com.qs.ai.admian.service.impl.AiApiServiceImpl;
 import com.qs.ai.admian.util.AiApiUtil;
+import com.qs.ai.admian.util.RedisUtil;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -22,8 +23,12 @@ import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+
+import static org.mockito.Mockito.mock;
 
 /**
  * Verifies reusable AI API utility behavior across providers and output modes.
@@ -100,18 +105,8 @@ class AiApiUtilTest {
         httpServer.start();
         baseUrl = "http://localhost:" + httpServer.getAddress().getPort();
 
-        DashScopeProperties dashScopeProperties = new DashScopeProperties();
-        dashScopeProperties.setApiKey("test-qwen-key");
-        dashScopeProperties.setBaseUrl(baseUrl);
-        dashScopeProperties.setChatPath("/qwen/chat");
-
-        DeepSeekProperties deepSeekProperties = new DeepSeekProperties();
-        deepSeekProperties.setApiKey("test-deepseek-key");
-        deepSeekProperties.setBaseUrl(baseUrl);
-        deepSeekProperties.setChatPath("/deepseek/chat");
-
         aiApiService = new AiApiServiceImpl();
-        aiApiUtil = new AiApiUtil(dashScopeProperties, deepSeekProperties, new ObjectMapper(), aiApiService);
+        aiApiUtil = newAiApiUtil("/qwen/chat");
     }
 
     @AfterEach
@@ -134,11 +129,6 @@ class AiApiUtilTest {
         Assertions.assertEquals(9, qwenResult.totalTokens());
         Assertions.assertTrue(lastRequestBody.get().contains("\"model\":\"qwen-turbo\""));
 
-        DeepSeekProperties deepSeekProperties = new DeepSeekProperties();
-        deepSeekProperties.setApiKey("test-deepseek-key");
-        deepSeekProperties.setBaseUrl(baseUrl);
-        deepSeekProperties.setChatPath("/deepseek/chat");
-
         AiApiChatResult deepSeekResult = aiApiUtil.chat(AiModelProvider.DEEPSEEK, messages,
                 AiChatOptions.builder().model("deepseek-chat").temperature(0.3D).maxTokens(256).build());
         Assertions.assertEquals("deepseek answer", deepSeekResult.answer());
@@ -148,17 +138,7 @@ class AiApiUtilTest {
 
     @Test
     void structuredChatShouldParseJsonResponse() {
-        DashScopeProperties dashScopeProperties = new DashScopeProperties();
-        dashScopeProperties.setApiKey("test-qwen-key");
-        dashScopeProperties.setBaseUrl(baseUrl);
-        dashScopeProperties.setChatPath("/structured/chat");
-
-        DeepSeekProperties deepSeekProperties = new DeepSeekProperties();
-        deepSeekProperties.setApiKey("test-deepseek-key");
-        deepSeekProperties.setBaseUrl(baseUrl);
-        deepSeekProperties.setChatPath("/deepseek/chat");
-
-        AiApiUtil structuredUtil = new AiApiUtil(dashScopeProperties, deepSeekProperties, new ObjectMapper(), aiApiService);
+        AiApiUtil structuredUtil = newAiApiUtil("/structured/chat");
         IntentResult result = structuredUtil.structuredChat(AiModelProvider.QWEN,
                 List.of(AiChatMessage.builder().role("user").content("login failed").build()),
                 AiChatOptions.builder().temperature(0.1D).maxInputTokens(100).build(),
@@ -171,17 +151,7 @@ class AiApiUtilTest {
 
     @Test
     void streamChatShouldCollectChunksAndUsage() {
-        DashScopeProperties dashScopeProperties = new DashScopeProperties();
-        dashScopeProperties.setApiKey("test-qwen-key");
-        dashScopeProperties.setBaseUrl(baseUrl);
-        dashScopeProperties.setChatPath("/stream/chat");
-
-        DeepSeekProperties deepSeekProperties = new DeepSeekProperties();
-        deepSeekProperties.setApiKey("test-deepseek-key");
-        deepSeekProperties.setBaseUrl(baseUrl);
-        deepSeekProperties.setChatPath("/deepseek/chat");
-
-        AiApiUtil streamUtil = new AiApiUtil(dashScopeProperties, deepSeekProperties, new ObjectMapper(), aiApiService);
+        AiApiUtil streamUtil = newAiApiUtil("/stream/chat");
         List<String> chunks = new ArrayList<>();
         AiApiChatResult result = streamUtil.streamChat(AiModelProvider.QWEN,
                 List.of(AiChatMessage.builder().role("user").content("stream").build()),
@@ -217,6 +187,30 @@ class AiApiUtilTest {
         exchange.sendResponseHeaders(200, response.length);
         exchange.getResponseBody().write(response);
         exchange.close();
+    }
+
+    private AiApiUtil newAiApiUtil(String qwenChatPath) {
+        AiModelsProperties properties = new AiModelsProperties();
+        Map<String, AiModelsProperties.Model> providers = new LinkedHashMap<>();
+        providers.put("qwen", model(AiModelProvider.QWEN, "test-qwen-key", qwenChatPath, "qwen-turbo"));
+        providers.put("deepseek", model(AiModelProvider.DEEPSEEK, "test-deepseek-key",
+                "/deepseek/chat", "deepseek-chat"));
+        properties.setProviders(providers);
+
+        AiModelConfigRegistry registry = new AiModelConfigRegistry(properties, mock(RedisUtil.class));
+        registry.refresh(properties);
+        return new AiApiUtil(registry, new ObjectMapper(), aiApiService);
+    }
+
+    private AiModelsProperties.Model model(AiModelProvider provider, String apiKey, String chatPath,
+                                           String defaultModel) {
+        AiModelsProperties.Model model = new AiModelsProperties.Model();
+        model.setProvider(provider);
+        model.setApiKey(apiKey);
+        model.setBaseUrl(baseUrl);
+        model.setChatPath(chatPath);
+        model.setDefaultModel(defaultModel);
+        return model;
     }
 
     private record IntentResult(String intent, Double confidence) {

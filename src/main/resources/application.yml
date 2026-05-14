@@ -5,6 +5,11 @@ spring:
     name: qs-ai-admian
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
   servlet:
     multipart:
       max-file-size: 100MB

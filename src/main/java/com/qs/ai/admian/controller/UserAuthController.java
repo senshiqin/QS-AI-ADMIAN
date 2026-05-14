@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,6 +31,7 @@ import java.time.LocalDateTime;
 public class UserAuthController {
 
     private final SysUserService sysUserService;
+    private final PasswordEncoder passwordEncoder;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -47,8 +49,7 @@ public class UserAuthController {
         if (user.getStatus() == null || user.getStatus() != 1) {
             return ApiResponse.fail(ResultCode.FORBIDDEN.getCode(), "User is disabled");
         }
-        // For demo simplicity: compare plaintext. Replace with BCrypt/Argon2 verification in production.
-        if (!request.getPassword().equals(user.getPasswordHash())) {
+        if (!matchesPassword(request.getPassword(), user.getPasswordHash())) {
             return ApiResponse.fail(ResultCode.UNAUTHORIZED.getCode(), "Username or password is incorrect");
         }
 
@@ -61,8 +62,33 @@ public class UserAuthController {
                 .accessToken(token)
                 .expiresInSeconds(7200L)
                 .build();
+        upgradePlaintextPasswordIfNeeded(user, request.getPassword());
         user.setLastLoginTime(LocalDateTime.now());
         sysUserService.updateById(user);
         return ApiResponse.success("Login success", response);
+    }
+
+    private boolean matchesPassword(String rawPassword, String storedPassword) {
+        if (storedPassword == null || storedPassword.isBlank()) {
+            return false;
+        }
+        if (isBcryptHash(storedPassword)) {
+            return passwordEncoder.matches(rawPassword, storedPassword);
+        }
+        // 兼容历史明文密码，登录成功后会自动升级为 BCrypt。
+        return rawPassword.equals(storedPassword);
+    }
+
+    private void upgradePlaintextPasswordIfNeeded(SysUser user, String rawPassword) {
+        if (!isBcryptHash(user.getPasswordHash())) {
+            user.setPasswordHash(passwordEncoder.encode(rawPassword));
+        }
+    }
+
+    private boolean isBcryptHash(String password) {
+        return password != null
+                && (password.startsWith("$2a$")
+                || password.startsWith("$2b$")
+                || password.startsWith("$2y$"));
     }
 }

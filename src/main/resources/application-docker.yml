@@ -1,0 +1,49 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:${MYSQL_PORT:3306}/${MYSQL_DB:qs_ai}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:qs_ai_root_123456}
+    hikari:
+      connection-test-query: SELECT 1
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      validation-timeout: 5000
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 3000ms
+
+milvus:
+  uri: ${MILVUS_URI:http://milvus:19530}
+  auto-create-collection: ${MILVUS_AUTO_CREATE_COLLECTION:true}
+
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://ollama:11434}
+
+ai:
+  models:
+    providers:
+      llama3:
+        base-url: ${OLLAMA_BASE_URL:http://ollama:11434}
+
+file:
+  upload:
+    base-dir: ${FILE_UPLOAD_BASE_DIR:/app/uploads/files}
+
+logging:
+  level:
+    com.qs.ai.admian: INFO
