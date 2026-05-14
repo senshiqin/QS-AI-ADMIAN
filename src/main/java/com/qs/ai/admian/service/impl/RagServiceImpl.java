@@ -10,6 +10,7 @@ import com.qs.ai.admian.controller.response.RagRetrievedChunkResponse;
 import com.qs.ai.admian.entity.AiKnowledgeFile;
 import com.qs.ai.admian.exception.ParamException;
 import com.qs.ai.admian.service.AiKnowledgeFileService;
+import com.qs.ai.admian.service.AiRagIngestTaskService;
 import com.qs.ai.admian.service.RagIngestAsyncTask;
 import com.qs.ai.admian.service.RagService;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
@@ -64,6 +65,7 @@ public class RagServiceImpl implements RagService {
     private final MultiModelChatUtil multiModelChatUtil;
     private final RagProperties ragProperties;
     private final RagIngestAsyncTask ragIngestAsyncTask;
+    private final AiRagIngestTaskService aiRagIngestTaskService;
     private final RedisUtil redisUtil;
     private final ObjectMapper objectMapper;
 
@@ -111,6 +113,7 @@ public class RagServiceImpl implements RagService {
             aiKnowledgeFileService.updateById(knowledgeFile);
 
             return new RagIngestResponse(
+                    null,
                     knowledgeFile.getId(),
                     knowledgeFile.getKbCode(),
                     knowledgeFile.getFileName(),
@@ -149,13 +152,17 @@ public class RagServiceImpl implements RagService {
                 : overlapRatio;
 
         AiKnowledgeFile knowledgeFile = saveParsingFile(file, safeKbCode, safeUploaderUserId);
-        ragIngestAsyncTask.ingest(file, knowledgeFile.getId(), safeChunkSize, safeOverlapRatio)
+        Long taskId = aiRagIngestTaskService
+                .createPendingTask(knowledgeFile, safeChunkSize, safeOverlapRatio)
+                .getId();
+        ragIngestAsyncTask.ingest(file, knowledgeFile.getId(), taskId, safeChunkSize, safeOverlapRatio)
                 .exceptionally(ex -> {
                     log.error("RAG async ingest future completed exceptionally, fileId={}",
                             knowledgeFile.getId(), ex);
                     return null;
                 });
         return new RagIngestResponse(
+                taskId,
                 knowledgeFile.getId(),
                 knowledgeFile.getKbCode(),
                 knowledgeFile.getFileName(),

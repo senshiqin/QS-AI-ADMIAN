@@ -27,23 +27,28 @@ import java.util.concurrent.CompletableFuture;
 public class RagIngestAsyncTask {
 
     private final AiKnowledgeFileService aiKnowledgeFileService;
+    private final AiRagIngestTaskService aiRagIngestTaskService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
     private final MilvusVectorUtil milvusVectorUtil;
 
     @Async("aiTaskExecutor")
     public CompletableFuture<RagIngestResponse> ingest(FileUploadResponse file,
                                                        Long knowledgeFileId,
+                                                       Long taskId,
                                                        int chunkSize,
                                                        double overlapRatio) {
+        long startTime = System.currentTimeMillis();
         AiKnowledgeFile knowledgeFile = aiKnowledgeFileService.getById(knowledgeFileId);
         if (knowledgeFile == null) {
             return CompletableFuture.failedFuture(new ParamException("knowledge file not found: " + knowledgeFileId));
         }
 
         try {
+            aiRagIngestTaskService.markRunning(taskId, "parse file");
             log.info("RAG async ingest started, fileId={}, fileName={}",
                     knowledgeFileId, knowledgeFile.getFileName());
             String parsedText = TextParseUtil.parse(file.storagePath());
+            aiRagIngestTaskService.updateProgress(taskId, 25, "split chunks");
             List<TextChunk> chunks = TextChunkUtil.splitBySemantic(
                     knowledgeFile.getId(),
                     parsedText,
@@ -54,11 +59,14 @@ public class RagIngestAsyncTask {
                 throw new ParamException("parsed text does not contain valid chunks");
             }
 
+            aiRagIngestTaskService.updateProgress(taskId, 45, "embed chunks");
             List<float[]> vectors = aiEmbeddingUtil.embedBatch(chunks.stream()
                     .map(TextChunk::content)
                     .toList());
+            aiRagIngestTaskService.updateProgress(taskId, 75, "write vectors");
             milvusVectorUtil.deleteByFileId(knowledgeFile.getId());
             long storedVectorCount = milvusVectorUtil.batchInsert(chunks, vectors);
+            aiRagIngestTaskService.updateProgress(taskId, 90, "update metadata");
 
             knowledgeFile.setParseStatus(2);
             knowledgeFile.setChunkCount(chunks.size());
@@ -69,6 +77,7 @@ public class RagIngestAsyncTask {
             aiKnowledgeFileService.updateById(knowledgeFile);
 
             RagIngestResponse response = new RagIngestResponse(
+                    taskId,
                     knowledgeFile.getId(),
                     knowledgeFile.getKbCode(),
                     knowledgeFile.getFileName(),
@@ -81,6 +90,14 @@ public class RagIngestAsyncTask {
                     storedVectorCount,
                     knowledgeFile.getParseStatus()
             );
+            aiRagIngestTaskService.markSuccess(
+                    taskId,
+                    parsedText.length(),
+                    chunks.size(),
+                    storedVectorCount,
+                    aiEmbeddingUtil.getEmbeddingModel(),
+                    System.currentTimeMillis() - startTime
+            );
             log.info("RAG async ingest completed, fileId={}, chunkCount={}, storedVectorCount={}",
                     knowledgeFileId, chunks.size(), storedVectorCount);
             return CompletableFuture.completedFuture(response);
@@ -89,6 +106,7 @@ public class RagIngestAsyncTask {
             knowledgeFile.setRemark(ex.getMessage());
             knowledgeFile.setUpdateTime(LocalDateTime.now());
             aiKnowledgeFileService.updateById(knowledgeFile);
+            aiRagIngestTaskService.markFailed(taskId, ex.getMessage(), System.currentTimeMillis() - startTime);
             log.error("RAG async ingest failed, fileId={}", knowledgeFileId, ex);
             return CompletableFuture.failedFuture(ex);
         }

@@ -34,6 +34,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -46,7 +47,7 @@ import java.util.List;
  * Knowledge document management APIs.
  */
 @Slf4j
-@Tag(name = "AI Documents", description = "知识库文档管理：查询、删除、批量上传和异步向量化")
+@Tag(name = "AI Documents", description = "Knowledge document query, delete and batch upload APIs")
 @RestController
 @RequestMapping("/api/v1/ai/documents")
 @RequiredArgsConstructor
@@ -60,28 +61,28 @@ public class AiDocumentController {
     private final MilvusVectorUtil milvusVectorUtil;
 
     @Operation(
-            summary = "分页查询知识库文档",
-            description = "按知识库编码、文件名、文件类型、解析状态和上传时间范围查询 ai_knowledge_file。"
+            summary = "Page knowledge documents",
+            description = "Query ai_knowledge_file by knowledge base, file name, file type, parse status and created time."
     )
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping
     public ApiResponse<AiDocumentPageResponse> pageDocuments(
-            @Parameter(description = "页码，从 1 开始", example = "1")
+            @Parameter(description = "Page number from 1", example = "1")
             @RequestParam(value = "pageNo", required = false, defaultValue = "1") Long pageNo,
-            @Parameter(description = "每页数量，最大 100", example = "10")
+            @Parameter(description = "Page size, max 100", example = "10")
             @RequestParam(value = "pageSize", required = false, defaultValue = "10") Long pageSize,
-            @Parameter(description = "知识库编码", example = "default")
+            @Parameter(description = "Knowledge base code", example = "default")
             @RequestParam(value = "kbCode", required = false) String kbCode,
-            @Parameter(description = "文件名关键字", example = "multi_model")
+            @Parameter(description = "File name keyword", example = "multi_model")
             @RequestParam(value = "fileName", required = false) String fileName,
-            @Parameter(description = "文件类型", example = "md")
+            @Parameter(description = "File type", example = "md")
             @RequestParam(value = "fileType", required = false) String fileType,
-            @Parameter(description = "解析状态：0待处理，1处理中，2成功，3失败", example = "2")
+            @Parameter(description = "Parse status: 0 pending, 1 running, 2 success, 3 failed", example = "2")
             @RequestParam(value = "parseStatus", required = false) Integer parseStatus,
-            @Parameter(description = "创建开始时间，格式 yyyy-MM-dd HH:mm:ss")
+            @Parameter(description = "Created from, format yyyy-MM-dd HH:mm:ss")
             @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
             @RequestParam(value = "createdFrom", required = false) LocalDateTime createdFrom,
-            @Parameter(description = "创建结束时间，格式 yyyy-MM-dd HH:mm:ss")
+            @Parameter(description = "Created to, format yyyy-MM-dd HH:mm:ss")
             @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
             @RequestParam(value = "createdTo", required = false) LocalDateTime createdTo) {
         long safePageNo = pageNo == null || pageNo <= 0 ? 1L : pageNo;
@@ -101,26 +102,26 @@ public class AiDocumentController {
         ));
     }
 
-    @Operation(summary = "查询知识库文档详情", description = "根据文档 ID 查询 ai_knowledge_file 元数据。")
+    @Operation(summary = "Get knowledge document detail")
     @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/{fileId}")
     public ApiResponse<AiDocumentResponse> getDocument(
-            @Parameter(description = "文档ID", required = true, example = "1")
+            @Parameter(description = "Document id", required = true, example = "1")
             @PathVariable Long fileId) {
         AiKnowledgeFile file = requireDocument(fileId);
         return ApiResponse.success(toResponse(file));
     }
 
     @Operation(
-            summary = "删除知识库文档",
-            description = "逻辑删除文档元数据，并删除 Milvus 中该文档对应的向量；可选择是否删除本地物理文件。"
+            summary = "Delete knowledge document",
+            description = "Logic delete metadata and delete related vectors from Milvus. Physical file deletion is optional."
     )
     @SecurityRequirement(name = "bearerAuth")
     @DeleteMapping("/{fileId}")
     public ApiResponse<AiDocumentDeleteResponse> deleteDocument(
-            @Parameter(description = "文档ID", required = true, example = "1")
+            @Parameter(description = "Document id", required = true, example = "1")
             @PathVariable Long fileId,
-            @Parameter(description = "是否删除本地物理文件，默认 false", example = "false")
+            @Parameter(description = "Whether to delete local physical file", example = "false")
             @RequestParam(value = "deletePhysicalFile", required = false, defaultValue = "false")
             Boolean deletePhysicalFile) {
         AiKnowledgeFile file = requireDocument(fileId);
@@ -140,25 +141,28 @@ public class AiDocumentController {
     }
 
     @Operation(
-            summary = "批量上传知识库文档",
-            description = "批量上传 pdf/docx/txt/md 文件，并提交 RAG 解析、切片、向量化和 Milvus 入库任务。默认异步执行。",
-            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                    content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
-                            array = @ArraySchema(schema = @Schema(type = "string", format = "binary")))
-            )
+            summary = "Batch upload knowledge documents",
+            description = "Upload pdf/docx/txt/md files and submit RAG parse, chunk, embed and Milvus ingest tasks. Async by default."
     )
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping(value = "/batch-upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<AiDocumentBatchUploadResponse> batchUpload(
-            @Parameter(description = "待上传文件列表，支持 pdf/docx/txt/md", required = true)
-            @RequestParam("files") List<MultipartFile> files,
-            @Parameter(description = "知识库编码", example = "default")
+            @Parameter(
+                    description = "Files to upload. Supported: pdf/docx/txt/md",
+                    required = true,
+                    content = @Content(
+                            mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
+                            array = @ArraySchema(schema = @Schema(type = "string", format = "binary"))
+                    )
+            )
+            @RequestPart("files") List<MultipartFile> files,
+            @Parameter(description = "Knowledge base code", example = "default")
             @RequestParam(value = "kbCode", required = false, defaultValue = "default") String kbCode,
-            @Parameter(description = "切片大小", example = "800")
+            @Parameter(description = "Chunk size", example = "800")
             @RequestParam(value = "chunkSize", required = false, defaultValue = "800") Integer chunkSize,
-            @Parameter(description = "切片重叠比例", example = "0.15")
+            @Parameter(description = "Chunk overlap ratio", example = "0.15")
             @RequestParam(value = "overlapRatio", required = false, defaultValue = "0.15") Double overlapRatio,
-            @Parameter(description = "是否异步向量化入库，默认 true", example = "true")
+            @Parameter(description = "Whether to ingest asynchronously", example = "true")
             @RequestParam(value = "async", required = false, defaultValue = "true") Boolean async,
             HttpServletRequest request) {
         if (files == null || files.isEmpty()) {
