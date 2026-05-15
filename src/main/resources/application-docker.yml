@@ -47,3 +47,12 @@ file:
 logging:
   level:
     com.qs.ai.admian: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always

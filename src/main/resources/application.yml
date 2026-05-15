@@ -190,3 +190,34 @@ maintenance:
 logging:
   level:
     org.springframework.boot.autoconfigure: INFO
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: ${MANAGEMENT_HEALTH_SHOW_DETAILS:always}
+      probes:
+        enabled: true
+  health:
+    redis:
+      enabled: true
+    db:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        qs.ai.chat.duration: true
+        qs.rag.retrieve.duration: true
+        qs.rag.ingest.duration: true
+      percentiles:
+        http.server.requests: 0.5,0.9,0.95,0.99
+        qs.ai.chat.duration: 0.5,0.9,0.95,0.99
+        qs.rag.retrieve.duration: 0.5,0.9,0.95,0.99
+        qs.rag.ingest.duration: 0.5,0.9,0.95,0.99

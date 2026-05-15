@@ -4,6 +4,7 @@ import com.qs.ai.admian.controller.response.FileUploadResponse;
 import com.qs.ai.admian.controller.response.RagIngestResponse;
 import com.qs.ai.admian.entity.AiKnowledgeFile;
 import com.qs.ai.admian.exception.ParamException;
+import com.qs.ai.admian.metrics.AiMetricsRecorder;
 import com.qs.ai.admian.service.dto.TextChunk;
 import com.qs.ai.admian.util.AiEmbeddingUtil;
 import com.qs.ai.admian.util.MilvusVectorUtil;
@@ -30,6 +31,7 @@ public class RagIngestAsyncTask {
     private final AiRagIngestTaskService aiRagIngestTaskService;
     private final AiEmbeddingUtil aiEmbeddingUtil;
     private final MilvusVectorUtil milvusVectorUtil;
+    private final AiMetricsRecorder aiMetricsRecorder;
 
     @Async("aiTaskExecutor")
     public CompletableFuture<RagIngestResponse> ingest(FileUploadResponse file,
@@ -98,6 +100,8 @@ public class RagIngestAsyncTask {
                     aiEmbeddingUtil.getEmbeddingModel(),
                     System.currentTimeMillis() - startTime
             );
+            aiMetricsRecorder.recordRagIngest("success", System.currentTimeMillis() - startTime,
+                    chunks.size(), storedVectorCount);
             log.info("RAG async ingest completed, fileId={}, chunkCount={}, storedVectorCount={}",
                     knowledgeFileId, chunks.size(), storedVectorCount);
             return CompletableFuture.completedFuture(response);
@@ -107,6 +111,7 @@ public class RagIngestAsyncTask {
             knowledgeFile.setUpdateTime(LocalDateTime.now());
             aiKnowledgeFileService.updateById(knowledgeFile);
             aiRagIngestTaskService.markFailed(taskId, ex.getMessage(), System.currentTimeMillis() - startTime);
+            aiMetricsRecorder.recordRagIngest("failed", System.currentTimeMillis() - startTime, 0, 0);
             log.error("RAG async ingest failed, fileId={}", knowledgeFileId, ex);
             return CompletableFuture.failedFuture(ex);
         }

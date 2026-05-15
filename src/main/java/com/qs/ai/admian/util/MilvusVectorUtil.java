@@ -30,8 +30,12 @@ public class MilvusVectorUtil {
 
     public long batchInsert(List<MilvusVectorRecord> records) {
         validateRecords(records);
+        long startTime = System.currentTimeMillis();
         try {
-            return milvusVectorService.upsertBatch(records);
+            long affectedRows = milvusVectorService.upsertBatch(records);
+            log.info("Milvus batch insert completed, recordCount={}, affectedRows={}, durationMs={}",
+                    records.size(), affectedRows, System.currentTimeMillis() - startTime);
+            return affectedRows;
         } catch (ParamException | MilvusVectorException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -56,8 +60,12 @@ public class MilvusVectorUtil {
         validateVector(queryVector);
         float safeMinScore = minScore <= 0 ? resolveSimilarityThreshold() : minScore;
         int safeTopK = topK <= 0 ? DEFAULT_TOP_K : topK;
+        long startTime = System.currentTimeMillis();
         try {
-            return milvusVectorService.search(queryVector, safeTopK, safeMinScore);
+            List<MilvusSearchResult> results = milvusVectorService.search(queryVector, safeTopK, safeMinScore);
+            log.info("Milvus similarity search completed, topK={}, minScore={}, hitCount={}, durationMs={}",
+                    safeTopK, safeMinScore, results.size(), System.currentTimeMillis() - startTime);
+            return results;
         } catch (ParamException | MilvusVectorException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -70,8 +78,12 @@ public class MilvusVectorUtil {
         if (fileId == null) {
             throw new ParamException("fileId must not be null");
         }
+        long startTime = System.currentTimeMillis();
         try {
-            return milvusVectorService.deleteByFileId(fileId);
+            long deletedRows = milvusVectorService.deleteByFileId(fileId);
+            log.info("Milvus delete by file id completed, fileId={}, deletedRows={}, durationMs={}",
+                    fileId, deletedRows, System.currentTimeMillis() - startTime);
+            return deletedRows;
         } catch (ParamException | MilvusVectorException ex) {
             throw ex;
         } catch (Exception ex) {

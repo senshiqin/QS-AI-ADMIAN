@@ -3,6 +3,7 @@ package com.qs.ai.admian.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qs.ai.admian.config.RagProperties;
+import com.qs.ai.admian.metrics.AiMetricsRecorder;
 import com.qs.ai.admian.controller.response.FileUploadResponse;
 import com.qs.ai.admian.controller.response.RagIngestResponse;
 import com.qs.ai.admian.controller.response.RagRetrieveResponse;
@@ -68,6 +69,7 @@ public class RagServiceImpl implements RagService {
     private final AiRagIngestTaskService aiRagIngestTaskService;
     private final RedisUtil redisUtil;
     private final ObjectMapper objectMapper;
+    private final AiMetricsRecorder aiMetricsRecorder;
 
     @Override
     public RagIngestResponse ingestFile(FileUploadResponse file,
@@ -193,6 +195,7 @@ public class RagServiceImpl implements RagService {
 
     @Override
     public RagRetrieveResponse retrieve(String queryText, Integer topK, Float minScore) {
+        long startTime = System.currentTimeMillis();
         String cleanQuery = TextParseUtil.cleanText(queryText);
         if (!StringUtils.hasText(cleanQuery)) {
             throw new ParamException("queryText must not be blank");
@@ -201,35 +204,74 @@ public class RagServiceImpl implements RagService {
         int safeTopK = topK == null || topK <= 0 ? resolveDefaultTopK() : topK;
         float safeMinScore = minScore == null || minScore <= 0 ? resolveDefaultMinScore() : minScore;
         String cacheKey = buildRetrieveCacheKey(cleanQuery, safeTopK, safeMinScore);
+        String queryHash = sha256(cleanQuery);
+        long redisGetStartTime = System.currentTimeMillis();
         RagRetrieveResponse cached = getCachedRetrieve(cacheKey);
+        long redisGetMs = System.currentTimeMillis() - redisGetStartTime;
         if (cached != null) {
-            log.debug("RAG retrieve cache hit, key={}", cacheKey);
+            log.info("RAG retrieve timing, cacheHit=true, queryHash={}, topK={}, minScore={}, "
+                            + "redisGetMs={}, totalMs={}, hitCount={}",
+                    queryHash, safeTopK, safeMinScore, redisGetMs, System.currentTimeMillis() - startTime,
+                    cached.hitCount());
+            aiMetricsRecorder.recordRagRetrieve(true, true, cached.hitCount(),
+                    System.currentTimeMillis() - startTime);
             return cached;
         }
 
-        int candidateTopK = safeTopK * resolveCandidateMultiplier();
-        float[] queryVector = aiEmbeddingUtil.embed(cleanQuery);
-        List<MilvusSearchResult> searchResults = refineSearchResults(
-                milvusVectorUtil.similaritySearch(queryVector, candidateTopK, safeMinScore),
-                safeTopK
-        );
-        Map<Long, AiKnowledgeFile> fileMap = loadFileMap(searchResults);
-        List<RagRetrievedChunkResponse> chunks = searchResults.stream()
-                .map(result -> toChunkResponse(result, fileMap.get(result.fileId())))
-                .toList();
+        try {
+            int candidateTopK = safeTopK * resolveCandidateMultiplier();
+            long embeddingStartTime = System.currentTimeMillis();
+            float[] queryVector = aiEmbeddingUtil.embed(cleanQuery);
+            long embeddingMs = System.currentTimeMillis() - embeddingStartTime;
 
-        RagRetrieveResponse response = new RagRetrieveResponse(
-                cleanQuery,
-                safeTopK,
-                safeMinScore,
-                aiEmbeddingUtil.getEmbeddingModel(),
-                milvusVectorUtil.getEmbeddingDimension(),
-                chunks.size(),
-                chunks,
-                buildRagContext(chunks)
-        );
-        cacheRetrieve(cacheKey, response);
-        return response;
+            long milvusStartTime = System.currentTimeMillis();
+            List<MilvusSearchResult> rawSearchResults = milvusVectorUtil.similaritySearch(queryVector,
+                    candidateTopK, safeMinScore);
+            long milvusMs = System.currentTimeMillis() - milvusStartTime;
+
+            long rerankStartTime = System.currentTimeMillis();
+            List<MilvusSearchResult> searchResults = refineSearchResults(rawSearchResults, safeTopK);
+            long rerankMs = System.currentTimeMillis() - rerankStartTime;
+
+            long dbStartTime = System.currentTimeMillis();
+            Map<Long, AiKnowledgeFile> fileMap = loadFileMap(searchResults);
+            long dbMs = System.currentTimeMillis() - dbStartTime;
+
+            long buildStartTime = System.currentTimeMillis();
+            List<RagRetrievedChunkResponse> chunks = searchResults.stream()
+                    .map(result -> toChunkResponse(result, fileMap.get(result.fileId())))
+                    .toList();
+
+            RagRetrieveResponse response = new RagRetrieveResponse(
+                    cleanQuery,
+                    safeTopK,
+                    safeMinScore,
+                    aiEmbeddingUtil.getEmbeddingModel(),
+                    milvusVectorUtil.getEmbeddingDimension(),
+                    chunks.size(),
+                    chunks,
+                    buildRagContext(chunks)
+            );
+            long buildMs = System.currentTimeMillis() - buildStartTime;
+
+            long redisSetStartTime = System.currentTimeMillis();
+            cacheRetrieve(cacheKey, response);
+            long redisSetMs = System.currentTimeMillis() - redisSetStartTime;
+            log.info("RAG retrieve timing, cacheHit=false, queryHash={}, topK={}, candidateTopK={}, minScore={}, "
+                            + "redisGetMs={}, embeddingMs={}, milvusMs={}, rerankMs={}, dbMs={}, buildMs={}, "
+                            + "redisSetMs={}, totalMs={}, hitCount={}",
+                    queryHash, safeTopK, candidateTopK, safeMinScore, redisGetMs, embeddingMs, milvusMs, rerankMs,
+                    dbMs, buildMs, redisSetMs, System.currentTimeMillis() - startTime, response.hitCount());
+            aiMetricsRecorder.recordRagRetrieve(true, false, response.hitCount(),
+                    System.currentTimeMillis() - startTime);
+            return response;
+        } catch (RuntimeException ex) {
+            aiMetricsRecorder.recordRagRetrieve(false, false, 0,
+                    System.currentTimeMillis() - startTime);
+            log.warn("RAG retrieve failed, queryHash={}, totalMs={}", queryHash,
+                    System.currentTimeMillis() - startTime, ex);
+            throw ex;
+        }
     }
 
     @Override

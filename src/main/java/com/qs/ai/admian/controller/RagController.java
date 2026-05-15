@@ -2,13 +2,20 @@ package com.qs.ai.admian.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qs.ai.admian.controller.request.RagAskRequest;
+import com.qs.ai.admian.controller.request.RagAdvancedRetrieveRequest;
+import com.qs.ai.admian.controller.request.RagEvalRequest;
 import com.qs.ai.admian.controller.request.RagRetrieveRequest;
+import com.qs.ai.admian.controller.request.RagRewriteRequest;
 import com.qs.ai.admian.controller.response.FileUploadResponse;
+import com.qs.ai.admian.controller.response.RagAdvancedRetrieveResponse;
 import com.qs.ai.admian.controller.response.RagAnswerResponse;
+import com.qs.ai.admian.controller.response.RagEvalResponse;
 import com.qs.ai.admian.controller.response.RagIngestResponse;
 import com.qs.ai.admian.controller.response.RagRetrieveResponse;
+import com.qs.ai.admian.controller.response.RagRewriteResponse;
 import com.qs.ai.admian.service.dto.AiApiChatResult;
 import com.qs.ai.admian.service.FileUploadService;
+import com.qs.ai.admian.service.RagEnhanceService;
 import com.qs.ai.admian.service.RagService;
 import com.qs.ai.admian.util.MultiModelChatUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
@@ -47,6 +54,7 @@ public class RagController {
 
     private final FileUploadService fileUploadService;
     private final RagService ragService;
+    private final RagEnhanceService ragEnhanceService;
     private final ObjectMapper objectMapper;
     private final MultiModelChatUtil multiModelChatUtil;
     @Qualifier("aiTaskExecutor")
@@ -106,6 +114,28 @@ public class RagController {
     public ApiResponse<RagRetrieveResponse> retrieve(@Valid @RequestBody RagRetrieveRequest request) {
         RagRetrieveResponse response = ragService.retrieve(request.queryText(), request.topK(), request.minScore());
         return ApiResponse.success("RAG chunks retrieved", response);
+    }
+
+    @Operation(summary = "Rewrite user query for RAG retrieval")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping("/rewrite")
+    public ApiResponse<RagRewriteResponse> rewrite(@Valid @RequestBody RagRewriteRequest request) {
+        return ApiResponse.success("RAG query rewritten", ragEnhanceService.rewrite(request));
+    }
+
+    @Operation(summary = "Retrieve chunks with query rewrite and lightweight rerank")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping("/retrieve/advanced")
+    public ApiResponse<RagAdvancedRetrieveResponse> advancedRetrieve(
+            @Valid @RequestBody RagAdvancedRetrieveRequest request) {
+        return ApiResponse.success("RAG advanced chunks retrieved", ragEnhanceService.advancedRetrieve(request));
+    }
+
+    @Operation(summary = "Evaluate RAG retrieval by expected keywords and source file")
+    @SecurityRequirement(name = "bearerAuth")
+    @PostMapping("/eval")
+    public ApiResponse<RagEvalResponse> evaluate(@Valid @RequestBody RagEvalRequest request) {
+        return ApiResponse.success("RAG retrieval evaluated", ragEnhanceService.evaluate(request));
     }
 
     @Operation(summary = "RAG question answering with Qwen streaming output")

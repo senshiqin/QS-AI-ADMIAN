@@ -44,17 +44,30 @@ public class AiEmbeddingUtil {
     }
 
     public List<float[]> embedBatch(List<String> texts) {
+        long startTime = System.currentTimeMillis();
         List<String> cleanTexts = validateAndCleanTexts(texts);
         AiModelsProperties.Model modelConfig = resolveEmbeddingModelConfig();
         aiApiService.validateApiKey(modelConfig.getApiKey(), PROVIDER_NAME);
 
         int batchSize = resolveBatchSize(modelConfig);
         List<float[]> embeddings = new ArrayList<>(cleanTexts.size());
-        for (int start = 0; start < cleanTexts.size(); start += batchSize) {
-            int end = Math.min(start + batchSize, cleanTexts.size());
-            embeddings.addAll(callEmbeddingApi(modelConfig, cleanTexts.subList(start, end)));
+        int batchCount = 0;
+        try {
+            for (int start = 0; start < cleanTexts.size(); start += batchSize) {
+                int end = Math.min(start + batchSize, cleanTexts.size());
+                batchCount++;
+                embeddings.addAll(callEmbeddingApi(modelConfig, cleanTexts.subList(start, end)));
+            }
+            log.info("Embedding batch completed, model={}, textCount={}, batchSize={}, batchCount={}, durationMs={}",
+                    modelConfig.getEmbedding().getModel(), cleanTexts.size(), batchSize, batchCount,
+                    System.currentTimeMillis() - startTime);
+            return embeddings;
+        } catch (RuntimeException ex) {
+            log.warn("Embedding batch failed, model={}, textCount={}, batchSize={}, batchCount={}, durationMs={}",
+                    modelConfig.getEmbedding().getModel(), cleanTexts.size(), batchSize, batchCount,
+                    System.currentTimeMillis() - startTime, ex);
+            throw ex;
         }
-        return embeddings;
     }
 
     public Embedding embedAsEmbedding(String text) {
@@ -77,6 +90,7 @@ public class AiEmbeddingUtil {
     }
 
     private List<float[]> callEmbeddingApi(AiModelsProperties.Model modelConfig, List<String> texts) {
+        long startTime = System.currentTimeMillis();
         AiModelsProperties.Embedding embedding = modelConfig.getEmbedding();
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", embedding.getModel());
@@ -98,8 +112,13 @@ public class AiEmbeddingUtil {
                             .retrieve()
                             .body(String.class)
             );
-            return parseEmbeddingResponse(responseBody, texts.size());
+            List<float[]> result = parseEmbeddingResponse(responseBody, texts.size());
+            log.info("Embedding API call completed, model={}, textCount={}, durationMs={}",
+                    embedding.getModel(), texts.size(), System.currentTimeMillis() - startTime);
+            return result;
         } catch (Exception ex) {
+            log.warn("Embedding API call failed, model={}, textCount={}, durationMs={}",
+                    embedding.getModel(), texts.size(), System.currentTimeMillis() - startTime, ex);
             throw aiApiService.toAiApiException(PROVIDER_NAME + " API request", ex);
         }
     }
