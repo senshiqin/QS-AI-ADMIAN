@@ -1,0 +1,252 @@
+[
+  {
+    "queryText": "当前 qs-ai-admin 项目的核心定位是什么？",
+    "expectedAnswer": "Spring Boot 3.2.5 + JDK17 的 AI 应用后台，提供多模型、RAG、知识库、文档向量化能力。",
+    "expectedKeywords": ["SpringBoot3.2.5", "JDK17", "AI应用后台", "RAG", "知识库"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "这个项目支持哪些大模型调用方式？",
+    "expectedAnswer": "支持 Qwen、DeepSeek、本地 Ollama，多模型配置可运行时刷新。",
+    "expectedKeywords": ["Qwen", "DeepSeek", "Ollama", "多模型", "运行时配置"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "项目里的多模型适配是怎么做的？",
+    "expectedAnswer": "通过统一模型选择策略和 MultiModelChatUtil 封装不同 provider，云端和本地模型走不同适配器。",
+    "expectedKeywords": ["MultiModelChatUtil", "provider", "模型选择", "Ollama", "适配器"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "本地模型调用用的是什么方案？",
+    "expectedAnswer": "使用 Ollama 作为本地模型服务，Docker 环境中可以通过 qs-ai-ollama 容器访问。",
+    "expectedKeywords": ["Ollama", "本地模型", "Docker", "容器"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "RAG 文档上传后的处理流程是什么？",
+    "expectedAnswer": "文件上传后进行解析、切片、Embedding、向量入库 Milvus，可异步执行。",
+    "expectedKeywords": ["文件解析", "切片", "Embedding", "Milvus", "异步"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "为什么文档上传需要 taskId？",
+    "expectedAnswer": "异步入库不会马上完成，taskId 用于查询任务状态、失败原因和重试。",
+    "expectedKeywords": ["taskId", "异步", "任务状态", "失败", "重试"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "向量库使用了什么组件？",
+    "expectedAnswer": "使用 Milvus 存储知识片段向量，并通过相似度检索召回 TopK 片段。",
+    "expectedKeywords": ["Milvus", "向量", "相似度", "TopK", "召回"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Redis 在项目里主要优化了什么？",
+    "expectedAnswer": "缓存高频 RAG 检索结果、模型配置或其他热点数据，减少重复请求和链路耗时。",
+    "expectedKeywords": ["Redis", "缓存", "高频检索", "模型配置", "耗时"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Docker Compose 一键部署包含哪些服务？",
+    "expectedAnswer": "后端、MySQL、Redis、Milvus、MinIO、Etcd、Ollama 等服务可通过 Compose 启动。",
+    "expectedKeywords": ["Docker Compose", "MySQL", "Redis", "Milvus", "MinIO", "Ollama"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Flyway 在项目里解决什么问题？",
+    "expectedAnswer": "管理数据库版本脚本，使本地和 Docker 环境表结构可自动初始化和升级。",
+    "expectedKeywords": ["Flyway", "数据库版本", "初始化", "升级", "脚本"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "用户密码安全做了什么处理？",
+    "expectedAnswer": "使用 BCrypt 对密码加密存储，登录时进行加密校验。",
+    "expectedKeywords": ["BCrypt", "密码加密", "登录", "校验"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Swagger3 在项目中起什么作用？",
+    "expectedAnswer": "提供接口文档和调试入口，统一描述 Controller 请求参数和响应结构。",
+    "expectedKeywords": ["Swagger3", "接口文档", "Controller", "响应结构"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "全局异常处理主要统一了什么？",
+    "expectedAnswer": "统一业务异常、参数异常、文件异常、AI 调用异常等返回格式。",
+    "expectedKeywords": ["全局异常", "业务异常", "参数异常", "AI调用异常", "统一返回"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "统一返回格式大概是什么结构？",
+    "expectedAnswer": "返回 code、message、data、timestamp 等字段，前端统一解析。",
+    "expectedKeywords": ["code", "message", "data", "timestamp", "统一返回"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "JMeter 压测主要验证了哪些接口？",
+    "expectedAnswer": "健康检查、文档分页查询、RAG 检索、冷查询等接口的吞吐、耗时和错误率。",
+    "expectedKeywords": ["JMeter", "健康检查", "文档分页", "RAG检索", "错误率"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "冷查询压测为什么要避免缓存命中？",
+    "expectedAnswer": "冷查询能更真实验证 Embedding、Milvus 检索、DB 查询等完整 RAG 链路性能。",
+    "expectedKeywords": ["冷查询", "缓存命中", "Embedding", "Milvus", "DB"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "query rewrite 的作用是什么？",
+    "expectedAnswer": "对用户原始问题进行规范化或 LLM 改写，提高向量召回关键词覆盖和语义匹配。",
+    "expectedKeywords": ["query rewrite", "问题改写", "召回", "语义匹配"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "rerank 的作用是什么？",
+    "expectedAnswer": "对 Milvus 召回结果按向量分数和关键词匹配进行二次排序，提升最终片段质量。",
+    "expectedKeywords": ["rerank", "Milvus", "二次排序", "向量分数", "关键词匹配"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "RAG eval 是如何判断效果的？",
+    "expectedAnswer": "根据期望关键词召回率、期望来源文件是否命中、是否有召回结果判断 passed。",
+    "expectedKeywords": ["RAG eval", "关键词召回率", "来源文件", "passed"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Actuator 暴露了哪些监控入口？",
+    "expectedAnswer": "暴露 health、info、metrics、prometheus 等端点。",
+    "expectedKeywords": ["Actuator", "health", "metrics", "prometheus"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Micrometer 在项目里记录了哪些指标？",
+    "expectedAnswer": "记录 AI chat、RAG retrieve、RAG ingest、任务状态等指标。",
+    "expectedKeywords": ["Micrometer", "AI chat", "RAG retrieve", "RAG ingest", "任务状态"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "Prometheus 和 Grafana 如何接入？",
+    "expectedAnswer": "后端暴露 /actuator/prometheus，Prometheus 可抓取指标，Grafana 可配置面板展示。",
+    "expectedKeywords": ["Prometheus", "Grafana", "actuator", "prometheus", "指标"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "关键链路耗时日志覆盖哪些部分？",
+    "expectedAnswer": "覆盖 Embedding、Milvus、LLM、Redis、DB、RAG 总耗时等关键节点。",
+    "expectedKeywords": ["Embedding", "Milvus", "LLM", "Redis", "DB", "耗时日志"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "前端上传文档后应该如何判断向量化完成？",
+    "expectedAnswer": "不能只看上传成功，要根据 taskId 轮询任务状态，SUCCESS 后才代表向量化完成。",
+    "expectedKeywords": ["前端", "上传文档", "taskId", "轮询", "SUCCESS"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  },
+  {
+    "queryText": "这个项目面试时可以怎么概括亮点？",
+    "expectedAnswer": "Spring Boot AI 后台，覆盖多模型适配、RAG、异步任务、缓存、向量库、Docker、压测和监控。",
+    "expectedKeywords": ["Spring Boot", "多模型", "RAG", "异步任务", "缓存", "压测", "监控"],
+    "expectedFileName": "PROJECT_PROGRESS",
+    "topK": 5,
+    "minScore": 0.65,
+    "rewrite": true,
+    "rewriteWithLlm": false
+  }
+]
