@@ -2,6 +2,12 @@
 
 Java Spring Boot 3.2.5 AI 应用后端脚手架（JDK 17）。
 
+## 关联仓库
+
+- 前端仓库：https://github.com/senshiqin/qs-ai-admin-web
+- 前端开发地址：`http://localhost:5173`
+- 后端默认地址：`http://localhost:8080`
+
 ## 技术栈
 - Spring Boot 3.2.5
 - Spring Web
