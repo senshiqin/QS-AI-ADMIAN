@@ -25,15 +25,29 @@ public final class JwtUtil {
     }
 
     public static String generateToken(String userId, String username, String secretKey) {
+        return generateToken(userId, username, secretKey, EXPIRE_DURATION);
+    }
+
+    public static String generateToken(String userId, String username, String secretKey, Duration expireDuration) {
         Map<String, Object> claims = new HashMap<>(2);
         claims.put("userId", userId);
         claims.put("username", username);
-        return generateToken(claims, userId, secretKey);
+        return generateToken(claims, userId, secretKey, expireDuration);
     }
 
     public static String generateToken(Map<String, Object> claims, String subject, String secretKey) {
+        return generateToken(claims, subject, secretKey, EXPIRE_DURATION);
+    }
+
+    public static String generateToken(Map<String, Object> claims,
+                                       String subject,
+                                       String secretKey,
+                                       Duration expireDuration) {
+        if (expireDuration == null || expireDuration.isNegative() || expireDuration.isZero()) {
+            throw new IllegalArgumentException("JWT expire duration must be positive");
+        }
         Date now = new Date();
-        Date expireAt = new Date(now.getTime() + EXPIRE_DURATION.toMillis());
+        Date expireAt = new Date(now.getTime() + expireDuration.toMillis());
         SecretKey key = buildKey(secretKey);
         return Jwts.builder()
                 .setClaims(claims)

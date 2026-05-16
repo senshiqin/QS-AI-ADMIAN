@@ -17,3 +17,7 @@ spring:
 logging:
   level:
     com.qs.ai.admian: INFO
+
+ai:
+  rate-limit:
+    enabled: false

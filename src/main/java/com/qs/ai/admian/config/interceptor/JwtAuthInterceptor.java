@@ -1,15 +1,17 @@
 package com.qs.ai.admian.config.interceptor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qs.ai.admian.config.JwtProperties;
 import com.qs.ai.admian.util.JwtUtil;
 import com.qs.ai.admian.util.response.ApiResponse;
 import com.qs.ai.admian.util.response.ResultCode;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -30,9 +32,7 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
     private static final String TOKEN_HEADER = "token";
 
     private final ObjectMapper objectMapper;
-
-    @Value("${jwt.secret}")
-    private String jwtSecret;
+    private final JwtProperties jwtProperties;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -42,17 +42,18 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        if (JwtUtil.isTokenExpired(token, jwtSecret)) {
+        Claims claims;
+        try {
+            claims = JwtUtil.parseToken(token, jwtProperties.getSecret());
+        } catch (ExpiredJwtException ex) {
             writeForbidden(response, "Token expired, please login again");
             return false;
-        }
-
-        if (!JwtUtil.validateToken(token, jwtSecret)) {
+        } catch (JwtException | IllegalArgumentException ex) {
+            log.warn("JWT validation failed, uri={}, message={}", request.getRequestURI(), ex.getMessage());
             writeUnauthorized(response, "Invalid token");
             return false;
         }
 
-        Claims claims = JwtUtil.parseToken(token, jwtSecret);
         request.setAttribute("loginUserId", claims.get("userId", String.class));
         request.setAttribute("loginUsername", claims.get("username", String.class));
         log.debug("JWT auth success, uri={}, userId={}", request.getRequestURI(), claims.get("userId", String.class));

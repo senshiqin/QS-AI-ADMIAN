@@ -38,6 +38,14 @@ springdoc:
 
 jwt:
   secret: ${JWT_SECRET:ReplaceWithAtLeast32BytesSecretKeyForJwtAuth123456}
+  access-token-expire-seconds: ${JWT_ACCESS_TOKEN_EXPIRE_SECONDS:7200}
+
+security:
+  login:
+    failure-limit-enabled: ${LOGIN_FAILURE_LIMIT_ENABLED:true}
+    max-failures: ${LOGIN_MAX_FAILURES:5}
+    failure-window-seconds: ${LOGIN_FAILURE_WINDOW_SECONDS:300}
+    lock-seconds: ${LOGIN_LOCK_SECONDS:900}
 
 dashscope:
   api-key: ${DASHSCOPE_API_KEY:}

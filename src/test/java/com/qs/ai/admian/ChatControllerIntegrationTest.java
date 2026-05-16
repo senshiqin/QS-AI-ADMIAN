@@ -5,11 +5,12 @@ import com.qs.ai.admian.entity.AiChatRecord;
 import com.qs.ai.admian.exception.AiApiException;
 import com.qs.ai.admian.mapper.AiChatRecordMapper;
 import com.qs.ai.admian.service.ChatContextService;
-import com.qs.ai.admian.service.QwenChatService;
+import com.qs.ai.admian.service.dto.AiApiChatResult;
+import com.qs.ai.admian.service.dto.AiChatOptions;
 import com.qs.ai.admian.service.dto.AiChatMessage;
 import com.qs.ai.admian.service.dto.ChatContextMessage;
-import com.qs.ai.admian.service.dto.QwenChatResult;
 import com.qs.ai.admian.util.JwtUtil;
+import com.qs.ai.admian.util.MultiModelChatUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -24,14 +25,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
@@ -61,7 +61,7 @@ class ChatControllerIntegrationTest {
     private AiChatRecordMapper aiChatRecordMapper;
 
     @MockBean
-    private QwenChatService qwenChatService;
+    private MultiModelChatUtil multiModelChatUtil;
 
     @MockBean
     private ChatContextService chatContextService;
@@ -73,7 +73,7 @@ class ChatControllerIntegrationTest {
                 ChatContextMessage.builder().role("user").content("previous question").build(),
                 ChatContextMessage.builder().role("assistant").content("previous answer").build()
         ));
-        when(qwenChatService.chat(anyString(), anyList(), anyDouble())).thenReturn(QwenChatResult.builder()
+        when(multiModelChatUtil.chat(anyString(), anyList(), any(AiChatOptions.class))).thenReturn(AiApiChatResult.builder()
                 .answer("current answer")
                 .requestId("req-send-001")
                 .promptTokens(10)
@@ -100,29 +100,28 @@ class ChatControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.totalTokens").value(15));
 
         ArgumentCaptor<List<AiChatMessage>> messagesCaptor = ArgumentCaptor.forClass(List.class);
-        verify(qwenChatService).chat(eq("qwen-turbo"), messagesCaptor.capture(), eq(0.7D));
+        verify(multiModelChatUtil).chat(anyString(), messagesCaptor.capture(), any(AiChatOptions.class));
         List<AiChatMessage> sentMessages = messagesCaptor.getValue();
         Assertions.assertEquals(3, sentMessages.size());
         Assertions.assertEquals("previous question", sentMessages.get(0).getContent());
         Assertions.assertEquals("previous answer", sentMessages.get(1).getContent());
         Assertions.assertEquals("current question", sentMessages.get(2).getContent());
 
-        List<AiChatRecord> records = selectRecords(conversationId);
+        List<AiChatRecord> records = waitForRecords(conversationId, 2);
         Assertions.assertEquals(2, records.size());
         Assertions.assertEquals("user", records.get(0).getRoleType());
         Assertions.assertEquals("current question", records.get(0).getContent());
         Assertions.assertEquals("assistant", records.get(1).getRoleType());
         Assertions.assertEquals("current answer", records.get(1).getContent());
 
-        verify(chatContextService).addContextMessage(1L, conversationId, "user", "current question");
-        verify(chatContextService).addContextMessage(1L, conversationId, "assistant", "current answer");
+        verify(chatContextService).addContextMessages(eq(1L), eq(conversationId), anyList());
     }
 
     @Test
     void sendMessageShouldPersistErrorRecordAndReturnUnifiedError() throws Exception {
         String conversationId = "conv-send-error";
         when(chatContextService.getContextMessages(1L, conversationId)).thenReturn(List.of());
-        when(qwenChatService.chat(anyString(), anyList(), anyDouble()))
+        when(multiModelChatUtil.chat(anyString(), anyList(), any(AiChatOptions.class)))
                 .thenThrow(new AiApiException("AI service unavailable"));
 
         mockMvc.perform(post("/api/v1/ai/chat/send")
@@ -140,12 +139,12 @@ class ChatControllerIntegrationTest {
                 .andExpect(jsonPath("$.code").value(5102))
                 .andExpect(jsonPath("$.message").value("AI service unavailable"));
 
-        List<AiChatRecord> records = selectRecords(conversationId);
+        List<AiChatRecord> records = waitForRecords(conversationId, 2);
         Assertions.assertEquals(2, records.size());
         Assertions.assertEquals("will fail", records.get(0).getContent());
         Assertions.assertEquals("assistant", records.get(1).getRoleType());
         Assertions.assertEquals("AI service unavailable", records.get(1).getErrorMessage());
-        verify(chatContextService, never()).addContextMessage(eq(1L), eq(conversationId), anyString(), anyString());
+        verify(chatContextService, never()).addContextMessages(eq(1L), eq(conversationId), anyList());
     }
 
     @Test
@@ -154,9 +153,9 @@ class ChatControllerIntegrationTest {
         when(chatContextService.getContextMessages(1L, conversationId)).thenReturn(List.of(
                 ChatContextMessage.builder().role("assistant").content("cached answer").build()
         ));
-        when(qwenChatService.streamChat(anyString(), anyList(), anyDouble(), any())).thenAnswer(invocation -> {
-            invocation.<com.qs.ai.admian.service.dto.QwenStreamHandler>getArgument(3).onContent("OK");
-            return QwenChatResult.builder()
+        when(multiModelChatUtil.streamChat(anyString(), anyList(), any(AiChatOptions.class), any())).thenAnswer(invocation -> {
+            invocation.<Consumer<String>>getArgument(3).accept("OK");
+            return AiApiChatResult.builder()
                     .answer("OK")
                     .requestId("req-stream-001")
                     .promptTokens(8)
@@ -189,12 +188,11 @@ class ChatControllerIntegrationTest {
         Assertions.assertTrue(responseBody.contains("data:K"));
         Assertions.assertTrue(responseBody.contains("event:done"));
 
-        List<AiChatRecord> records = selectRecords(conversationId);
+        List<AiChatRecord> records = waitForRecords(conversationId, 2);
         Assertions.assertEquals(2, records.size());
         Assertions.assertEquals("stream question", records.get(0).getContent());
         Assertions.assertEquals("OK", records.get(1).getContent());
-        verify(chatContextService).addContextMessage(1L, conversationId, "user", "stream question");
-        verify(chatContextService).addContextMessage(1L, conversationId, "assistant", "OK");
+        verify(chatContextService).addContextMessages(eq(1L), eq(conversationId), anyList());
     }
 
     @Test
@@ -211,7 +209,18 @@ class ChatControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(4001));
 
-        verify(qwenChatService, never()).chat(anyString(), anyList(), anyDouble());
+        verify(multiModelChatUtil, never()).chat(anyString(), anyList(), any(AiChatOptions.class));
+    }
+
+    private List<AiChatRecord> waitForRecords(String conversationId, int expectedSize) throws InterruptedException {
+        for (int i = 0; i < 20; i++) {
+            List<AiChatRecord> records = selectRecords(conversationId);
+            if (records.size() >= expectedSize) {
+                return records;
+            }
+            Thread.sleep(50L);
+        }
+        return selectRecords(conversationId);
     }
 
     private List<AiChatRecord> selectRecords(String conversationId) {

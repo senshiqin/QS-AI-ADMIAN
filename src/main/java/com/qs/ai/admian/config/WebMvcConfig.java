@@ -20,8 +20,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(jwtAuthInterceptor)
-                .addPathPatterns("/api/v1/ai/**")
-                .excludePathPatterns("/api/v1/user/login", "/api/v1/user/login/**");
+                .addPathPatterns("/api/v1/ai/**", "/api/v1/user/**")
+                .excludePathPatterns("/api/v1/user/login", "/api/v1/user/login/**")
+                .order(0);
         registry.addInterceptor(aiRateLimitInterceptor)
                 .addPathPatterns("/api/v1/ai/chat/**")
                 .order(1);
